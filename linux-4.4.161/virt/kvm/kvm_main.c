@@ -2211,14 +2211,17 @@ static int kvm_vcpu_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	struct page *page;
 
 	if (vmf->pgoff == 0)
-		page = virt_to_page(vcpu->run);
+		page = virt_to_page(vcpu->run); //访问第一页时会访问kvm_vcpu结构体中的kvm_run类型的成员
 #ifdef CONFIG_X86
 	else if (vmf->pgoff == KVM_PIO_PAGE_OFFSET)
-		page = virt_to_page(vcpu->arch.pio_data);
+		page = virt_to_page(vcpu->arch.pio_data);//访问第二页时会访问kvm_vcpu结构体中kvm_vcpu_arch类型的成员
 #endif
 #ifdef KVM_COALESCED_MMIO_PAGE_OFFSET
 	else if (vmf->pgoff == KVM_COALESCED_MMIO_PAGE_OFFSET)
-		page = virt_to_page(vcpu->kvm->coalesced_mmio_ring);
+	/*访问第三页时会访问kvm_vcpu结构体中的kvm类型的coalesced_mmio_ring成员，
+	这一页在ioctl(KVM_CREATE_VM)代码路径中进行初始化
+	*/
+		page = virt_to_page(vcpu->kvm->coalesced_mmio_ring); 
 #endif
 	else
 		return kvm_arch_vcpu_fault(vcpu, vmf);
@@ -2228,12 +2231,12 @@ static int kvm_vcpu_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 }
 
 static const struct vm_operations_struct kvm_vcpu_vm_ops = {
-	.fault = kvm_vcpu_fault,
+	.fault = kvm_vcpu_fault, //在qemu访问共享内存时产生缺页异常时被调用
 };
 
 static int kvm_vcpu_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	vma->vm_ops = &kvm_vcpu_vm_ops;
+	vma->vm_ops = &kvm_vcpu_vm_ops; //设置这段虚拟地址空间的操作结构体
 	return 0;
 }
 

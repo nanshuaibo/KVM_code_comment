@@ -299,7 +299,7 @@ static int kvm_get_vcpu(KVMState *s, unsigned long vcpu_id)
     return kvm_vm_ioctl(s, KVM_CREATE_VCPU, (void *)vcpu_id);
 }
 
-int kvm_init_vcpu(CPUState *cpu)
+int kvm_init_vcpu(CPUState *cpu
 {
     KVMState *s = kvm_state;
     long mmap_size;
@@ -323,7 +323,7 @@ int kvm_init_vcpu(CPUState *cpu)
         DPRINTF("KVM_GET_VCPU_MMAP_SIZE failed\n");
         goto err;
     }
-
+    /*qemu调用mmap映射vcpu的fd这个匿名文件的时候，实际上仅分配了虚拟地址空间*/
     cpu->kvm_run = mmap(NULL, mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED,
                         cpu->kvm_fd, 0);
     if (cpu->kvm_run == MAP_FAILED) {
