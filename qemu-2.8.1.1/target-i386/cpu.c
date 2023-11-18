@@ -2409,6 +2409,12 @@ void cpu_clear_apic_feature(CPUX86State *env)
 
 #endif /* !CONFIG_USER_ONLY */
 
+/*构造一项指定的cpuid数据
+@param env x86cpu对象的env成员，表示的是x86架构相关的数据
+@param index 表示主功能号
+@param count 表示子功能号
+后面四个是输出函数，返回cpuid数据
+*/
 void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
                    uint32_t *eax, uint32_t *ebx,
                    uint32_t *ecx, uint32_t *edx)
@@ -2440,9 +2446,12 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
             index = env->cpuid_level;
     }
 
+    //根据index参数得到CPUID数据，存放在输出参数eax，ebx，ecx，edx中
     switch(index) {
     case 0:
-        *eax = env->cpuid_level;
+        *eax = env->cpuid_level; //存放cpuid基础功能的最大功能号
+
+        /*存放cpu的生成厂商*/
         *ebx = env->cpuid_vendor1;
         *edx = env->cpuid_vendor2;
         *ecx = env->cpuid_vendor3;
@@ -2662,7 +2671,7 @@ void cpu_x86_cpuid(CPUX86State *env, uint32_t index, uint32_t count,
         }
         break;
     }
-    case 0x80000000:
+    case 0x80000000: //获得最大的扩展功能号
         *eax = env->cpuid_xlevel;
         *ebx = env->cpuid_vendor1;
         *edx = env->cpuid_vendor2;

@@ -219,8 +219,9 @@ int kvm_vcpu_ioctl_set_cpuid2(struct kvm_vcpu *vcpu,
 	if (cpuid->nent > KVM_MAX_CPUID_ENTRIES)
 		goto out;
 	r = -EFAULT;
+	/*复制qemu传递过来的cpuid信息，cpuid->nent是数据项数*/
 	if (copy_from_user(&vcpu->arch.cpuid_entries, entries,
-			   cpuid->nent * sizeof(struct kvm_cpuid_entry2)))
+			   cpuid->nent * sizeof(struct kvm_cpuid_entry2))) 
 		goto out;
 	vcpu->arch.cpuid_nent = cpuid->nent;
 	kvm_apic_set_version(vcpu);

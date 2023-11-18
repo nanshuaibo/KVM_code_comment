@@ -206,9 +206,9 @@ struct kvm_cpuid {
 };
 
 struct kvm_cpuid_entry2 {
-	__u32 function;
-	__u32 index;
-	__u32 flags;
+	__u32 function; //主功能号
+	__u32 index; //子功能号
+	__u32 flags; //表示数据的属性
 	__u32 eax;
 	__u32 ebx;
 	__u32 ecx;
@@ -216,13 +216,13 @@ struct kvm_cpuid_entry2 {
 	__u32 padding[3];
 };
 
-#define KVM_CPUID_FLAG_SIGNIFCANT_INDEX		(1 << 0)
+#define KVM_CPUID_FLAG_SIGNIFCANT_INDEX		(1 << 0) //表示index这一项有效
 #define KVM_CPUID_FLAG_STATEFUL_FUNC		(1 << 1)
 #define KVM_CPUID_FLAG_STATE_READ_NEXT		(1 << 2)
 
 /* for KVM_SET_CPUID2 */
 struct kvm_cpuid2 {
-	__u32 nent;
+	__u32 nent; //表示entries的大小，即有多少个cpuid数据
 	__u32 padding;
 	struct kvm_cpuid_entry2 entries[0];
 };

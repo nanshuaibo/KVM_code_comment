@@ -688,6 +688,8 @@ static Error *invtsc_mig_blocker;
 
 #define KVM_MAX_CPUID_ENTRIES  100
 
+/*主要工作是设置虚拟机的cpuid数据，执行完成后kvm_init_vcpu也就完成了vcpu的初始化，
+虚拟机内部指向CPUID指令会导致 VM Exit，陷入KVM中，KVM会把数据返回给虚拟机，CPUID的数据由qemu构造*/
 int kvm_arch_init_vcpu(CPUState *cs)
 {
     struct {
@@ -784,6 +786,8 @@ int kvm_arch_init_vcpu(CPUState *cs)
         c->eax = env->features[FEAT_KVM];
     }
 
+    /*cpu_x86_cpuid函数通过4个输出参数返回cpuid数据，
+    kvm_arch_init_vcpu函数多次调用cpu_x86_cpuid函数构造cpuid*/
     cpu_x86_cpuid(env, 0, 0, &limit, &unused, &unused, &unused);
 
     for (i = 0; i <= limit; i++) {
@@ -967,6 +971,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
     }
 
     cpuid_data.cpuid.padding = 0;
+    //调用ioctl将CPUID的数据传到KVM中的vcpu相关的数据结构
     r = kvm_vcpu_ioctl(cs, KVM_SET_CPUID2, &cpuid_data);
     if (r) {
         return r;

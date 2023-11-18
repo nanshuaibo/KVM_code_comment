@@ -3292,6 +3292,7 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 		r = kvm_vcpu_ioctl_smi(vcpu);
 		break;
 	}
+	//保存qemu传递过来的cpuid信息，这些信息在vm exit的过程中传递到虚拟机内部
 	case KVM_SET_CPUID: {
 		struct kvm_cpuid __user *cpuid_arg = argp;
 		struct kvm_cpuid cpuid;

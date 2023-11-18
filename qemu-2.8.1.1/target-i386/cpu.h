@@ -1130,7 +1130,8 @@ typedef struct CPUX86State {
     /* Maximum level/xlevel/xlevel2 value for auto-assignment: */
     uint32_t cpuid_max_level, cpuid_max_xlevel, cpuid_max_xlevel2;
     /* Actual level/xlevel/xlevel2 value: */
-    uint32_t cpuid_level, cpuid_xlevel, cpuid_xlevel2;
+    
+    uint32_t cpuid_level/*最大的基础功能号*/, cpuid_xlevel/*最大的扩展功能号*/, cpuid_xlevel2/*用于centaur cpu*/;
     uint32_t cpuid_vendor1;
     uint32_t cpuid_vendor2;
     uint32_t cpuid_vendor3;
