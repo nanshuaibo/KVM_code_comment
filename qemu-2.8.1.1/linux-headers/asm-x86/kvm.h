@@ -209,7 +209,7 @@ struct kvm_cpuid_entry2 {
 	__u32 function; //主功能号
 	__u32 index; //子功能号
 	__u32 flags; //表示数据的属性
-	__u32 eax;
+	__u32 eax; //eax-edx表示这项cpuid对应的具体数据
 	__u32 ebx;
 	__u32 ecx;
 	__u32 edx;
