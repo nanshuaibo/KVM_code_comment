@@ -5963,7 +5963,7 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 	if (kvm_hv_hypercall_enabled(vcpu->kvm))
 		return kvm_hv_hypercall(vcpu);
 
-	nr = kvm_register_read(vcpu, VCPU_REGS_RAX);
+	nr = kvm_register_read(vcpu, VCPU_REGS_RAX); //读取参数
 	a0 = kvm_register_read(vcpu, VCPU_REGS_RBX);
 	a1 = kvm_register_read(vcpu, VCPU_REGS_RCX);
 	a2 = kvm_register_read(vcpu, VCPU_REGS_RDX);
@@ -5985,7 +5985,7 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 		goto out;
 	}
 
-	switch (nr) {
+	switch (nr) {   //根据调用号进行处理 
 	case KVM_HC_VAPIC_POLL_IRQ:
 		ret = 0;
 		break;
@@ -6000,7 +6000,7 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 out:
 	if (!op_64_bit)
 		ret = (u32)ret;
-	kvm_register_write(vcpu, VCPU_REGS_RAX, ret);
+	kvm_register_write(vcpu, VCPU_REGS_RAX, ret); //将结果写入rax寄存器返回
 	++vcpu->stat.hypercalls;
 	return r;
 }

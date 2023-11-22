@@ -7527,6 +7527,8 @@ static int handle_pcommit(struct kvm_vcpu *vcpu)
  * The exit handlers return 1 if the exit was handled fully and guest execution
  * may resume.  Otherwise they set the kvm_run parameter to indicate what needs
  * to be done to userspace and return 0.
+ * 如果退出完全处理，并且客户机执行可以继续，则退出处理函数返回 1。
+ * 否则，它们会设置 kvm_run 参数以指示用户空间需要执行什么操作，并返回 0。
  */
 static int (*const kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
 	[EXIT_REASON_EXCEPTION_NMI]           = handle_exception,
@@ -7544,7 +7546,7 @@ static int (*const kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
 	[EXIT_REASON_INVD]		      = handle_invd,
 	[EXIT_REASON_INVLPG]		      = handle_invlpg,
 	[EXIT_REASON_RDPMC]                   = handle_rdpmc,
-	[EXIT_REASON_VMCALL]                  = handle_vmcall,
+	[EXIT_REASON_VMCALL]                  = handle_vmcall, //x86架构下的hypercall的处理函数
 	[EXIT_REASON_VMCLEAR]	              = handle_vmclear,
 	[EXIT_REASON_VMLAUNCH]                = handle_vmlaunch,
 	[EXIT_REASON_VMPTRLD]                 = handle_vmptrld,
