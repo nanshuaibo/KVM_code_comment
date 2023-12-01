@@ -1334,18 +1334,24 @@ static struct shared_msr_entry *find_msr_entry(struct vcpu_vmx *vmx, u32 msr)
 	return NULL;
 }
 
-static void vmcs_clear(struct vmcs *vmcs)
+static void vmcs_load(struct vmcs *vmcs)
 {
-	u64 phys_addr = __pa(vmcs);
-	u8 error;
+    // 将 VMCS 结构体的物理地址获取出来
+    u64 phys_addr = __pa(vmcs);
+    // 用于保存执行 VMX 指令的错误信息
+    u8 error;
 
-	asm volatile (__ex(ASM_VMX_VMCLEAR_RAX) "; setna %0"
-		      : "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
-		      : "cc", "memory");
-	if (error)
-		printk(KERN_ERR "kvm: vmclear fail: %p/%llx\n",
-		       vmcs, phys_addr);
+    // 使用内联汇编执行 VMX 指令 VMPTRLD，并将错误信息保存到 error 变量中
+    asm volatile (__ex(ASM_VMX_VMPTRLD_RAX) "; setna %0"
+            : "=qm"(error) : "a"(&phys_addr), "m"(phys_addr)
+            : "cc", "memory");
+
+    // 如果执行 VMPTRLD 出现错误，输出错误信息
+    if (error)
+        printk(KERN_ERR "kvm: vmptrld %p/%llx failed\n",
+               vmcs, phys_addr);
 }
+
 
 static inline void loaded_vmcs_init(struct loaded_vmcs *loaded_vmcs)
 {
@@ -2067,26 +2073,35 @@ static void vmx_vcpu_pi_load(struct kvm_vcpu *vcpu, int cpu)
  */
 
 //完成当前物理cpu与该vcpu的vmcs进行绑定
-static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
+static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu/*pcpu的id*/)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	u64 phys_addr = __pa(per_cpu(vmxarea, cpu));
 
 	if (!vmm_exclusive)
 		kvm_cpu_vmxon(phys_addr);
-	else if (vmx->loaded_vmcs->cpu != cpu)
+	/* vmx->loaded_vmcs->cpu保存了vcpu上次运行的pcpu的id，
+	 * 如果和本次不同，说明物理cpu发生了切换
+	 */
+	else if (vmx->loaded_vmcs->cpu != cpu) 
+		/* 清除上次vcpu运行的pcpu中保存的该vcpu的信息,
+		 * 包括current_vmcs这个per-cpu变量和vcpu的vmcs
+		 */
 		loaded_vmcs_clear(vmx->loaded_vmcs);
-
+	
+	/* 将vcpu的vmcs结构赋值给物理cpu的per-cpu变量current_vmcs*/
 	if (per_cpu(current_vmcs, cpu) != vmx->loaded_vmcs->vmcs) {
 		per_cpu(current_vmcs, cpu) = vmx->loaded_vmcs->vmcs;
+		//加载vmcs到pcpu
 		vmcs_load(vmx->loaded_vmcs->vmcs);
 	}
 
+	/* vcpu上次运行的pcpu和本次不一样，也就是发生pcpu的切换*/
 	if (vmx->loaded_vmcs->cpu != cpu) {
 		struct desc_ptr *gdt = this_cpu_ptr(&host_gdt);
 		unsigned long sysenter_esp;
 
-		kvm_make_request(KVM_REQ_TLB_FLUSH, vcpu);
+		kvm_make_request(KVM_REQ_TLB_FLUSH, vcpu); //发送刷新vcpu的tlb表的请求
 		local_irq_disable();
 		crash_disable_local_vmclear(cpu);
 
@@ -2098,7 +2113,7 @@ static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 		smp_rmb();
 
 		list_add(&vmx->loaded_vmcs->loaded_vmcss_on_cpu_link,
-			 &per_cpu(loaded_vmcss_on_cpu, cpu));
+			 &per_cpu(loaded_vmcss_on_cpu, cpu)); //将vcpu链接到pcpu的loaded_vmcss_on_cpu变量上
 		crash_enable_local_vmclear(cpu);
 		local_irq_enable();
 
@@ -2112,7 +2127,7 @@ static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 		rdmsrl(MSR_IA32_SYSENTER_ESP, sysenter_esp);
 		vmcs_writel(HOST_IA32_SYSENTER_ESP, sysenter_esp); /* 22.2.3 */
 
-		vmx->loaded_vmcs->cpu = cpu;
+		vmx->loaded_vmcs->cpu = cpu; //设置vmcs的pcpuid
 	}
 
 	/* Setup TSC multiplier */
@@ -2138,17 +2153,28 @@ static void vmx_vcpu_pi_put(struct kvm_vcpu *vcpu)
 		pi_set_sn(pi_desc);
 }
 
+//将vcpu和pcpu解除关联
 static void vmx_vcpu_put(struct kvm_vcpu *vcpu)
 {
-	vmx_vcpu_pi_put(vcpu);
+    // 释放虚拟CPU的Posted Interrupt（PI）上下文
+    vmx_vcpu_pi_put(vcpu);
 
-	__vmx_load_host_state(to_vmx(vcpu));
-	if (!vmm_exclusive) {
-		__loaded_vmcs_clear(to_vmx(vcpu)->loaded_vmcs);
-		vcpu->cpu = -1;
-		kvm_cpu_vmxoff();
-	}
+    // 从虚拟CPU的VMCS中加载宿主（host）状态
+    __vmx_load_host_state(to_vmx(vcpu));
+
+    // 如果不处于虚拟机管理程序（VMM）独占模式
+    if (!vmm_exclusive) {
+        // 清除已加载的VMCS，用于支持VMCS阴影（shadowing）等场景
+        __loaded_vmcs_clear(to_vmx(vcpu)->loaded_vmcs);
+
+        // 重置虚拟CPU的CPU ID，标记它不在任何CPU上运行
+        vcpu->cpu = -1;
+
+        // 执行VMXOFF指令，将CPU从VMX操作模式切换回非虚拟化的操作模式
+        kvm_cpu_vmxoff();
+    }
 }
+
 
 static void vmx_fpu_activate(struct kvm_vcpu *vcpu)
 {

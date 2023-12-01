@@ -66,15 +66,15 @@
 MODULE_AUTHOR("Qumranet");
 MODULE_LICENSE("GPL");
 
-/* Architectures should define their poll value according to the halt latency */
+/* Architectures should define their poll value according to the halt latency 不同架构下的最大轮询值*/
 static unsigned int halt_poll_ns = KVM_HALT_POLL_NS_DEFAULT;
 module_param(halt_poll_ns, uint, S_IRUGO | S_IWUSR);
 
-/* Default doubles per-vcpu halt_poll_ns. */
+/* Default doubles per-vcpu halt_poll_ns. 轮询时间增加两倍 */
 static unsigned int halt_poll_ns_grow = 2;
 module_param(halt_poll_ns_grow, int, S_IRUGO);
 
-/* Default resets per-vcpu halt_poll_ns . */
+/* Default resets per-vcpu halt_poll_ns. */ 
 static unsigned int halt_poll_ns_shrink;
 module_param(halt_poll_ns_shrink, int, S_IRUGO);
 
@@ -129,6 +129,7 @@ bool kvm_is_reserved_pfn(pfn_t pfn)
 
 /*
  * Switches to specified vcpu, until a matching vcpu_put()
+ * 将vcpu状态加载到物理cpu
  */
 int vcpu_load(struct kvm_vcpu *vcpu)
 {
@@ -136,21 +137,22 @@ int vcpu_load(struct kvm_vcpu *vcpu)
 
 	if (mutex_lock_killable(&vcpu->mutex))
 		return -EINTR;
-	cpu = get_cpu();
-	preempt_notifier_register(&vcpu->preempt_notifier);
+	cpu = get_cpu(); //禁止抢占，返回当前处理器id
+	preempt_notifier_register(&vcpu->preempt_notifier); //注册抢占回调
 
 	//调用vmx实现的vcpu_load
 	kvm_arch_vcpu_load(vcpu, cpu);
-	put_cpu();
+	put_cpu(); //开启抢占
 	return 0;
 }
 EXPORT_SYMBOL_GPL(vcpu_load);
 
+/*将当前物理cpu上运行的vcpu调度出去，并保存vcpu状态*/
 void vcpu_put(struct kvm_vcpu *vcpu)
 {
 	preempt_disable();
-	kvm_arch_vcpu_put(vcpu);
-	preempt_notifier_unregister(&vcpu->preempt_notifier);
+	kvm_arch_vcpu_put(vcpu); //架构层面的具体实现如vmx_vcpu_put
+	preempt_notifier_unregister(&vcpu->preempt_notifier); //取消抢占通知回调
 	preempt_enable();
 	mutex_unlock(&vcpu->mutex);
 }
@@ -1959,6 +1961,17 @@ void kvm_vcpu_mark_page_dirty(struct kvm_vcpu *vcpu, gfn_t gfn)
 }
 EXPORT_SYMBOL_GPL(kvm_vcpu_mark_page_dirty);
 
+
+/**
+ * grow_halt_poll_ns - 增加虚拟 CPU 的 HLT 轮询时间间隔。
+ * @vcpu: 指向 KVM 虚拟 CPU 结构的指针。
+ *
+ * 此函数根据全局配置参数 @halt_poll_ns_grow 调整虚拟 CPU 的 HLT 轮询时间间隔
+ * （@vcpu->halt_poll_ns）。如果 @vcpu->halt_poll_ns 最初为 0 并且 @halt_poll_ns_grow
+ * 非零，则将间隔设置为基础值 10,000 ns（10 微秒）。否则，将间隔乘以 @halt_poll_ns_grow。
+ * 最终的间隔受到全局参数 @halt_poll_ns 的限制，以防超过最大限制。
+ *
+ */
 static void grow_halt_poll_ns(struct kvm_vcpu *vcpu)
 {
 	int old, val;
@@ -1977,6 +1990,15 @@ static void grow_halt_poll_ns(struct kvm_vcpu *vcpu)
 	trace_kvm_halt_poll_ns_grow(vcpu->vcpu_id, val, old);
 }
 
+/**
+ * shrink_halt_poll_ns - 减小虚拟 CPU 的 HLT 轮询时间间隔。
+ * @vcpu: 指向 KVM 虚拟 CPU 结构的指针。
+ *
+ * 此函数根据全局配置参数 @halt_poll_ns_shrink 调整虚拟 CPU 的 HLT 轮询时间间隔
+ * （@vcpu->halt_poll_ns）。如果 @halt_poll_ns_shrink 为 0，则将间隔设置为 0。
+ * 否则，将间隔除以 @halt_poll_ns_shrink。
+ *
+ */
 static void shrink_halt_poll_ns(struct kvm_vcpu *vcpu)
 {
 	int old, val;
@@ -2349,6 +2371,7 @@ static int kvm_vcpu_ioctl_set_sigmask(struct kvm_vcpu *vcpu, sigset_t *sigset)
 	return 0;
 }
 
+//qemu在vcpu对应的fd上调用ioctl时对应的内核处理函数
 static long kvm_vcpu_ioctl(struct file *filp,
 			   unsigned int ioctl, unsigned long arg)
 {
@@ -2361,7 +2384,7 @@ static long kvm_vcpu_ioctl(struct file *filp,
 	if (vcpu->kvm->mm != current->mm)
 		return -EIO;
 
-	if (unlikely(_IOC_TYPE(ioctl) != KVMIO))
+	if (unlikely(_IOC_TYPE(ioctl) != KVMIO))N
 		return -EINVAL;
 
 #if defined(CONFIG_S390) || defined(CONFIG_PPC) || defined(CONFIG_MIPS)
@@ -2374,7 +2397,7 @@ static long kvm_vcpu_ioctl(struct file *filp,
 #endif
 
 
-	r = vcpu_load(vcpu);
+	r = vcpu_load(vcpu); //vcpu_load()第一次被调用
 	if (r)
 		return r;
 	switch (ioctl) {
@@ -2546,7 +2569,7 @@ out_free1:
 		r = kvm_arch_vcpu_ioctl(filp, ioctl, arg);
 	}
 out:
-	vcpu_put(vcpu);
+	vcpu_put(vcpu);//ioctl(KVM_RUN)结束时调用,解除vcpu和pcpu关联,取消vcpu_load中注册的抢占通知回调
 	kfree(fpu);
 	kfree(kvm_sregs);
 	return r;
@@ -3534,25 +3557,27 @@ struct kvm_vcpu *preempt_notifier_to_vcpu(struct preempt_notifier *pn)
 	return container_of(pn, struct kvm_vcpu, preempt_notifier);
 }
 
+//调度加载vcpu，完成pcpu和vcpu的关联
 static void kvm_sched_in(struct preempt_notifier *pn, int cpu)
 {
 	struct kvm_vcpu *vcpu = preempt_notifier_to_vcpu(pn);
 
 	if (vcpu->preempted)
-		vcpu->preempted = false;
+		vcpu->preempted = false;//禁止抢占
 
 	kvm_arch_sched_in(vcpu, cpu);
 
-	kvm_arch_vcpu_load(vcpu, cpu);
+	kvm_arch_vcpu_load(vcpu, cpu); //调用vmx_vcpu_load()完成pcpu和vcpu的关联
 }
 
+//vcpu线程被抢占后调用kvm_sched_out()
 static void kvm_sched_out(struct preempt_notifier *pn,
 			  struct task_struct *next)
 {
 	struct kvm_vcpu *vcpu = preempt_notifier_to_vcpu(pn);
 
 	if (current->state == TASK_RUNNING)
-		vcpu->preempted = true;
+		vcpu->preempted = true; //开抢占
 	kvm_arch_vcpu_put(vcpu);
 }
 
