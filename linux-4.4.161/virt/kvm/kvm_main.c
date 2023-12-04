@@ -713,7 +713,7 @@ static int kvm_vm_release(struct inode *inode, struct file *filp)
  */
 static int kvm_create_dirty_bitmap(struct kvm_memory_slot *memslot)
 {
-	unsigned long dirty_bytes = 2 * kvm_dirty_bitmap_bytes(memslot);
+	unsigned long dirty_bytes = 2 * kvm_dirty_bitmap_bytes(memslot); //分配两个脏页位图的大小
 
 	memslot->dirty_bitmap = kvm_kvzalloc(dirty_bytes);
 	if (!memslot->dirty_bitmap)
@@ -930,7 +930,7 @@ int __kvm_set_memory_region(struct kvm *kvm,
 
 	/* Allocate page dirty bitmap if needed */
 	if ((new.flags & KVM_MEM_LOG_DIRTY_PAGES) && !new.dirty_bitmap) {
-		if (kvm_create_dirty_bitmap(&new) < 0)
+		if (kvm_create_dirty_bitmap(&new) < 0)  //创建脏页位图
 			goto out_free;
 	}
 

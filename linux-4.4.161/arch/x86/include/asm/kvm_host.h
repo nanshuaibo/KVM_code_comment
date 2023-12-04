@@ -191,14 +191,14 @@ struct kvm_mmu_memory_cache {
 union kvm_mmu_page_role {
 	unsigned word;
 	struct {
-		unsigned level:4;
-		unsigned cr4_pae:1;
-		unsigned quadrant:2;
-		unsigned direct:1;
-		unsigned access:3;
-		unsigned invalid:1;
-		unsigned nxe:1;
-		unsigned cr0_wp:1;
+		unsigned level:4; //页面等级
+		unsigned cr4_pae:1; //表示页面是否启用了 PAE（Physical Address Extension）
+		unsigned quadrant:2;// 表示页面的象限，可能用于特定的虚拟地址区域
+		unsigned direct:1; // 表示页面是否为直接映射
+		unsigned access:3; //页面的访问权限
+		unsigned invalid:1;  
+		unsigned nxe:1; //表示页面是否启用了 NXE（No-Execute）
+		unsigned cr0_wp:1; //表示页面是否启用了 CR0 的写保护
 		unsigned smep_andnot_wp:1;
 		unsigned smap_andnot_wp:1;
 		unsigned :8;
@@ -221,20 +221,22 @@ struct kvm_mmu_page {
 	 * The following two entries are used to key the shadow page in the
 	 * hash table.
 	 */
-	gfn_t gfn;
-	union kvm_mmu_page_role role;
+	gfn_t gfn; //虚拟机中的页框号
+	union kvm_mmu_page_role role; 
 
-	u64 *spt;
+	u64 *spt;  //页表指针，存储了该页面的页表项
 	/* hold the gfn of each spte inside spt */
-	gfn_t *gfns;
-	bool unsync;
+	gfn_t *gfns;  //指向存储每个页表项对应的gfn数组的指针
+	bool unsync; //表示该页面是否和父页面同步
 	int root_count;          /* Currently serving as active root */
-	unsigned int unsync_children;
-	unsigned long parent_ptes;	/* Reverse mapping for parent_pte */
+	unsigned int unsync_children; //表示不同子页面的数量，即与当前页面不同步的子页面数目
+	//反向映射，用于记录父页面的 PTE（Page Table Entry） Reverse mapping for parent_pte 
+	unsigned long parent_ptes;	
 
 	/* The page is obsolete if mmu_valid_gen != kvm->arch.mmu_valid_gen.  */
 	unsigned long mmu_valid_gen;
 
+	/*表示与当前页面不同步的子页面*/
 	DECLARE_BITMAP(unsync_child_bitmap, 512);
 
 #ifdef CONFIG_X86_32
@@ -245,7 +247,10 @@ struct kvm_mmu_page {
 	int clear_spte_count;
 #endif
 
-	/* Number of writes since the last time traversal visited this page.  */
+	/*
+	 * Number of writes since the last time traversal visited this page. 
+	 * 表示自上次遍历访问该页面以来的次数
+	 */
 	int write_flooding_count;
 };
 

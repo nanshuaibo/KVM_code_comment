@@ -307,7 +307,10 @@ struct kvm_memory_slot {
 
 static inline unsigned long kvm_dirty_bitmap_bytes(struct kvm_memory_slot *memslot)
 {
-	return ALIGN(memslot->npages, BITS_PER_LONG) / 8;
+	/* 通过将 memslot 的页面数（npages）按照长整型的位数（BITS_PER_LONG）进行对齐，
+	 * 然后除以8来得到的。这确保了位图按照长整型对齐，且以字节为单位。
+	 */
+	return ALIGN(memslot->npages, BITS_PER_LONG) / 8; 
 }
 
 struct kvm_s390_adapter_int {

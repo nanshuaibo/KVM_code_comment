@@ -1194,6 +1194,7 @@ static bool spte_write_protect(struct kvm *kvm, u64 *sptep, bool pt_protect)
 {
 	u64 spte = *sptep;
 
+	/*判断当前页目录项是否有写权限，如果有，则去掉写权限*/
 	if (!is_writable_pte(spte) &&
 	      !(pt_protect && spte_is_locklessly_modifiable(spte)))
 		return false;
@@ -2859,6 +2860,7 @@ static bool page_fault_can_be_fast(u32 error_code)
 	return true;
 }
 
+/*根据sp以及sptep所属的页帧，加上该页的写属性，调用kvm_vcpu_mark_page_dirty标记脏页*/
 static bool
 fast_pf_fix_direct_spte(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp,
 			u64 *sptep, u64 spte)
@@ -2907,7 +2909,7 @@ static bool fast_page_fault(struct kvm_vcpu *vcpu, gva_t gva, int level,
 	if (!VALID_PAGE(vcpu->arch.mmu.root_hpa))
 		return false;
 
-	if (!page_fault_can_be_fast(error_code))
+	if (!page_fault_can_be_fast(error_code)) //如果是访问只读脏页产生的ept violation会返回true
 		return false;
 
 	walk_shadow_page_lockless_begin(vcpu);
@@ -2963,6 +2965,8 @@ static bool fast_page_fault(struct kvm_vcpu *vcpu, gva_t gva, int level,
 	 * Currently, fast page fault only works for direct mapping since
 	 * the gfn is not stable for indirect shadow page.
 	 * See Documentation/virtual/kvm/locking.txt to get more detail.
+	 * fast page fault仅适用于直接映射（direct mapping），
+	 * 而不适用于间接影子页（indirect shadow page）。
 	 */
 	ret = fast_pf_fix_direct_spte(vcpu, sp, iterator.sptep, spte);
 exit:
@@ -4605,8 +4609,9 @@ void kvm_mmu_slot_remove_write_access(struct kvm *kvm,
 	bool flush;
 
 	spin_lock(&kvm->mmu_lock);
+	/*移除memslot的所有页目录项和页表项的写权限*/
 	flush = slot_handle_all_level(kvm, memslot, slot_rmap_write_protect,
-				      false);
+				      false); 
 	spin_unlock(&kvm->mmu_lock);
 
 	/*

@@ -8004,10 +8004,11 @@ static void kvm_mmu_slot_apply_flags(struct kvm *kvm,
 	 * See the comments in fast_page_fault().
 	 */
 	if (new->flags & KVM_MEM_LOG_DIRTY_PAGES) {
-		if (kvm_x86_ops->slot_enable_log_dirty)
-			kvm_x86_ops->slot_enable_log_dirty(kvm, new);
+		if (kvm_x86_ops->slot_enable_log_dirty)//启用pml特性
+			kvm_x86_ops->slot_enable_log_dirty(kvm, new);// 设置回调函数为vmx_slot_enable_log_dirty
 		else
-			kvm_mmu_slot_remove_write_access(kvm, new);
+			kvm_mmu_slot_remove_write_access(kvm, new); //没有启用pml，移除内存页表的写权限
+		/*上述代码执行完毕后，memslot中对应的内存都是只读内存，所有写访问都会产生EPT violation，产生VM Exit，退回到KVM*/
 	} else {
 		if (kvm_x86_ops->slot_disable_log_dirty)
 			kvm_x86_ops->slot_disable_log_dirty(kvm, new);
@@ -8056,7 +8057,7 @@ void kvm_arch_commit_memory_region(struct kvm *kvm,
 	 * FIXME: const-ify all uses of struct kvm_memory_slot.
 	 */
 	if (change != KVM_MR_DELETE)
-		kvm_mmu_slot_apply_flags(kvm, (struct kvm_memory_slot *) new);
+		kvm_mmu_slot_apply_flags(kvm, (struct kvm_memory_slot *) new); //使能memslot的flags
 }
 
 void kvm_arch_flush_shadow_all(struct kvm *kvm)
