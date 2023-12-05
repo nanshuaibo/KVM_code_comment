@@ -1933,31 +1933,53 @@ int kvm_clear_guest(struct kvm *kvm, gpa_t gpa, unsigned long len)
 }
 EXPORT_SYMBOL_GPL(kvm_clear_guest);
 
-static void mark_page_dirty_in_slot(struct kvm_memory_slot *memslot,
-				    gfn_t gfn)
+/**
+ * mark_page_dirty_in_slot - 在内存插槽中标记页面为脏页。
+ *
+ * @param memslot: 指向内存插槽结构体的指针。
+ * @param gfn: 表示插槽内页面的 Guest Frame Number。
+ */
+static void mark_page_dirty_in_slot(struct kvm_memory_slot *memslot, gfn_t gfn)
 {
-	if (memslot && memslot->dirty_bitmap) {
-		unsigned long rel_gfn = gfn - memslot->base_gfn;
+    // 检查内存插槽和其脏页位图是否有效
+    if (memslot && memslot->dirty_bitmap) {
+        // 计算相对于插槽基地址的相对 GFN
+        unsigned long rel_gfn = gfn - memslot->base_gfn;
 
-		set_bit_le(rel_gfn, memslot->dirty_bitmap);
-	}
+        // 在脏页位图中设置相应的位，将页面标记为脏页
+        set_bit_le(rel_gfn, memslot->dirty_bitmap);
+    }
 }
 
+/**
+ * mark_page_dirty - 在指定的 KVM 实例中标记页面为脏页。
+ *
+ * @param kvm: 指向 KVM 实例的指针。
+ * @param gfn: 表示页面的 Guest Frame Number。
+ */
 void mark_page_dirty(struct kvm *kvm, gfn_t gfn)
 {
-	struct kvm_memory_slot *memslot;
+    // 获取与给定 GFN 相关联的内存插槽
+    struct kvm_memory_slot *memslot = gfn_to_memslot(kvm, gfn);
 
-	memslot = gfn_to_memslot(kvm, gfn);
-	mark_page_dirty_in_slot(memslot, gfn);
+    // 调用 mark_page_dirty_in_slot，传递获取的内存插槽
+    mark_page_dirty_in_slot(memslot, gfn);
 }
 EXPORT_SYMBOL_GPL(mark_page_dirty);
 
+/**
+ * kvm_vcpu_mark_page_dirty - 在 VCPU 的内存中标记页面为脏页。
+ *
+ * @param vcpu: 指向 KVM VCPU 结构体的指针。
+ * @param gfn: 表示页面的 Guest Frame Number。
+ */
 void kvm_vcpu_mark_page_dirty(struct kvm_vcpu *vcpu, gfn_t gfn)
 {
-	struct kvm_memory_slot *memslot;
+    // 获取与给定 GFN 在 VCPU 内相关联的内存插槽
+    struct kvm_memory_slot *memslot = kvm_vcpu_gfn_to_memslot(vcpu, gfn);
 
-	memslot = kvm_vcpu_gfn_to_memslot(vcpu, gfn);
-	mark_page_dirty_in_slot(memslot, gfn);
+    // 调用 mark_page_dirty_in_slot，传递获取的内存插槽
+    mark_page_dirty_in_slot(memslot, gfn);
 }
 EXPORT_SYMBOL_GPL(kvm_vcpu_mark_page_dirty);
 
