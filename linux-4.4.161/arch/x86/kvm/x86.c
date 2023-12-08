@@ -7371,7 +7371,7 @@ int kvm_arch_vcpu_setup(struct kvm_vcpu *vcpu)
 		return r;
 	//对kvm_vcpu的成员进行初始化，包括通用的vcpu结构还包括架构相关的vcpu.arch成员，最后调用vmx_vcpu_reset函数，设置vmcs相关区域
 	kvm_vcpu_reset(vcpu, false);
-	//完成内存虚拟化的初始化
+	//完成内存虚拟化的初始化,包括mmu初始化
 	kvm_mmu_setup(vcpu);
 	vcpu_put(vcpu);
 	return r;
@@ -7638,6 +7638,7 @@ int kvm_arch_vcpu_init(struct kvm_vcpu *vcpu)
 
 	kvm_set_tsc_khz(vcpu, max_tsc_khz);
 
+	//vcpu创建过程会创建虚拟mmu
 	r = kvm_mmu_create(vcpu);
 	if (r < 0)
 		goto fail_free_pio_data;

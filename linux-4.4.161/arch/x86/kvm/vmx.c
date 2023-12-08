@@ -3160,24 +3160,40 @@ static void hardware_disable(void)
 	cr4_clear_bits(X86_CR4_VMXE);
 }
 
+/**
+ * adjust_vmx_controls - 初始化 VMX 控制寄存器
+ * @ctl_min: 需要设置的控制位的最小值
+ * @ctl_opt: 可选的控制位
+ * @msr: 要读取的 MSR（Model Specific Register）寄存器
+ * @result: 存储最终 VMX 控制寄存器的指针
+ *
+ * 该函数通过读取指定的 MSR 寄存器（包含 VMX 控制位）来初始化 VMX 控制寄存器。
+ * 控制寄存器的值是通过与 ctl_min 和 ctl_opt 的组合计算得到的。
+ * 然后，通过按位操作确保了特定条件，以便满足 VMX 控制寄存器的要求。
+ * 最后，检查是否支持所需的最小（必需的）控制位集。
+ *
+ * @return: 成功返回 0，失败返回 -EIO（Input/Output 错误）
+ */
 static __init int adjust_vmx_controls(u32 ctl_min, u32 ctl_opt,
-				      u32 msr, u32 *result)
+                                      u32 msr, u32 *result)
 {
-	u32 vmx_msr_low, vmx_msr_high;
-	u32 ctl = ctl_min | ctl_opt;
+    u32 vmx_msr_low, vmx_msr_high;
+    u32 ctl = ctl_min | ctl_opt;
 
-	rdmsr(msr, vmx_msr_low, vmx_msr_high);
+    rdmsr(msr, vmx_msr_low, vmx_msr_high);
 
-	ctl &= vmx_msr_high; /* bit == 0 in high word ==> must be zero */
-	ctl |= vmx_msr_low;  /* bit == 1 in low word  ==> must be one  */
+    /* 将 ctl 中位为 0 的部分设置为 0，位为 1 的部分设置为 1 */
+    ctl &= vmx_msr_high;
+    ctl |= vmx_msr_low;
 
-	/* Ensure minimum (required) set of control bits are supported. */
-	if (ctl_min & ~ctl)
-		return -EIO;
+    /* 确保最小（必需的）控制位集得到支持 */
+    if (ctl_min & ~ctl)
+        return -EIO;
 
-	*result = ctl;
-	return 0;
+    *result = ctl;
+    return 0;
 }
+
 
 static __init bool allow_1_setting(u32 msr, u32 ctl)
 {
@@ -3264,8 +3280,8 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 		_cpu_based_exec_control &= ~(CPU_BASED_CR3_LOAD_EXITING |
 					     CPU_BASED_CR3_STORE_EXITING |
 					     CPU_BASED_INVLPG_EXITING);
-		rdmsr(MSR_IA32_VMX_EPT_VPID_CAP,
-		      vmx_capability.ept, vmx_capability.vpid);
+		rdmsr(MSR_IA32_VMX_EPT_VPID_CAP, /*该msr寄存器的第六位表示支持四级页表*/
+		      vmx_capability.ept, vmx_capability.vpid); //读取该寄存器的值保存到vmx_capability.vpid
 	}
 
 	min = VM_EXIT_SAVE_DEBUG_CONTROLS;
@@ -3281,7 +3297,7 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 	min = PIN_BASED_EXT_INTR_MASK | PIN_BASED_NMI_EXITING;
 	opt = PIN_BASED_VIRTUAL_NMIS | PIN_BASED_POSTED_INTR;
 	if (adjust_vmx_controls(min, opt, MSR_IA32_VMX_PINBASED_CTLS,
-				&_pin_based_exec_control) < 0)
+				&_pin_based_exec_control) < 0) //读取vmcs中的ept使能标识
 		return -EIO;
 
 	if (!(_cpu_based_2nd_exec_control &
@@ -6268,8 +6284,9 @@ static __init int hardware_setup(void)
 	if (enable_shadow_vmcs)
 		init_vmcs_shadow_fields();
 
-	if (!cpu_has_vmx_ept() ||
-	    !cpu_has_vmx_ept_4levels()) {
+		/*判断是否启用ept*/
+	if (!cpu_has_vmx_ept()  ||
+	    !cpu_has_vmx_ept_4levels()/**/) {
 		enable_ept = 0;
 		enable_unrestricted_guest = 0;
 		enable_ept_ad_bits = 0;

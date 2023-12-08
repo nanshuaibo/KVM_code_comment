@@ -48,6 +48,12 @@
  * 1. the guest-virtual to guest-physical
  * 2. while doing 1. it walks guest-physical to host-physical
  * If the hardware supports that we don't need to do shadow paging.
+ *
+ * 当将此变量设置为true时，启用二维分页（Two-Dimensional-Paging），
+ * 其中硬件会遍历两个页表：
+ * 1. 客户虚拟地址到客户物理地址
+ * 2. 在执行1的同时，遍历客户物理地址到主机物理地址
+ * 如果硬件支持这种方式，我们就不需要进行影子页表操作。
  */
 bool tdp_enabled = false;
 
@@ -3949,13 +3955,17 @@ static void paging32E_init_context(struct kvm_vcpu *vcpu,
 {
 	paging64_init_context_common(vcpu, context, PT32E_ROOT_LEVEL);
 }
-
+ /*
+  * 初始化KVM虚拟CPU的TDP模式下的内存管理单元（MMU）。
+  * 主要是初始化kvm_vcpu.kvm_vcpu_arch.kvm_mmu结构体
+  */
 static void init_kvm_tdp_mmu(struct kvm_vcpu *vcpu)
 {
 	struct kvm_mmu *context = &vcpu->arch.mmu;
 
 	context->base_role.word = 0;
 	context->base_role.smm = is_smm(vcpu);
+	//设置tdp模式下的缺页异常处理函数
 	context->page_fault = tdp_page_fault;
 	context->sync_page = nonpaging_sync_page;
 	context->invlpg = nonpaging_invlpg;
@@ -4101,9 +4111,9 @@ static void init_kvm_mmu(struct kvm_vcpu *vcpu)
 {
 	if (mmu_is_nested(vcpu))
 		init_kvm_nested_mmu(vcpu);
-	else if (tdp_enabled)
+	else if (tdp_enabled) //是否开启ept页表
 		init_kvm_tdp_mmu(vcpu);
-	else
+	else //使用影子页表
 		init_kvm_softmmu(vcpu);
 }
 
@@ -4465,27 +4475,38 @@ static void free_mmu_pages(struct kvm_vcpu *vcpu)
 		free_page((unsigned long)vcpu->arch.mmu.lm_root);
 }
 
+/*
+ * alloc_mmu_pages - 为MMU页表分配并初始化内存
+ * @vcpu: 指向KVM虚拟CPU结构的指针
+ *
+ * 此函数用于为KVM虚拟CPU的MMU分配内存页表，并进行初始化。在32位仿真模式下，即使在x86_64上，cr3仍然只有32位。因此，需要将分配的页表限制在前4GB的DMA32区域。
+ *
+ * 返回：
+ *   0 表示成功
+ *  -ENOMEM 表示内存分配失败
+ */
 static int alloc_mmu_pages(struct kvm_vcpu *vcpu)
 {
-	struct page *page;
-	int i;
+    struct page *page;
+    int i;
 
-	/*
-	 * When emulating 32-bit mode, cr3 is only 32 bits even on x86_64.
-	 * Therefore we need to allocate shadow page tables in the first
-	 * 4GB of memory, which happens to fit the DMA32 zone.
-	 */
-	page = alloc_page(GFP_KERNEL | __GFP_DMA32);
-	if (!page)
-		return -ENOMEM;
+    /* 分配一页内存，使用DMA32区域 */
+    page = alloc_page(GFP_KERNEL | __GFP_DMA32);
+    if (!page)
+        return -ENOMEM;
 
-	vcpu->arch.mmu.pae_root = page_address(page);
-	for (i = 0; i < 4; ++i)
-		vcpu->arch.mmu.pae_root[i] = INVALID_PAGE;
+    /* 将分配的页面映射到虚拟CPU结构的arch.mmu.pae_root中，这是指向根页表的指针 */
+    vcpu->arch.mmu.pae_root = page_address(page);
 
-	return 0;
+    /* 将根页表中的前4项初始化为INVALID_PAGE */
+    for (i = 0; i < 4; ++i)
+        vcpu->arch.mmu.pae_root[i] = INVALID_PAGE;
+
+    /* 成功分配并初始化页表，返回0 */
+    return 0;
 }
 
+/*设置vcpu的虚拟mmu页表的初始化值*/
 int kvm_mmu_create(struct kvm_vcpu *vcpu)
 {
 	vcpu->arch.walk_mmu = &vcpu->arch.mmu;
@@ -4493,12 +4514,13 @@ int kvm_mmu_create(struct kvm_vcpu *vcpu)
 	vcpu->arch.mmu.translate_gpa = translate_gpa;
 	vcpu->arch.nested_mmu.translate_gpa = translate_nested_gpa;
 
-	return alloc_mmu_pages(vcpu);
+	/*分配一个pae页，在使用影子页表时会实际工作，使用ept时会直接返回*/
+	return alloc_mmu_pages(vcpu); 
 }
 
 void kvm_mmu_setup(struct kvm_vcpu *vcpu)
 {
-	MMU_WARN_ON(VALID_PAGE(vcpu->arch.mmu.root_hpa));
+	MMU_WARN_ON(VALID_PAGE(vcpu->arch.mmu.root_hpa)); //检查vcpu的根页表物理地址是否有效
 
 	init_kvm_mmu(vcpu);
 }

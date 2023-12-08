@@ -267,63 +267,63 @@ struct rsvd_bits_validate {
 };
 
 /*
+ * struct kvm_mmu - KVM内存管理单元结构，模拟pcpu的mmu部件
+ * 在x86cpu下，mmu的作用主要是控制cpu对内存的分页访问，处理页访问错误。
+ * 该结构定义了KVM内存管理单元（MMU）的属性和行为。它封装了与虚拟地址到物理地址转换、页故障和页表管理相关的各种回调和属性。
  * x86 supports 3 paging modes (4-level 64-bit, 3-level 64-bit, and 2-level
  * 32-bit).  The kvm_mmu structure abstracts the details of the current mmu
  * mode.
+ * 描述了x86 架构支持的三种分页模式，分别为 4 级 64 位、3 级 64 位和 2 级 32 位。
+ * kvm_mmu 结构用于抽象当前 MMU 模式的详细信息。
  */
 struct kvm_mmu {
+	/* 管理CR3寄存器和页表的回调函数 */
 	void (*set_cr3)(struct kvm_vcpu *vcpu, unsigned long root);
 	unsigned long (*get_cr3)(struct kvm_vcpu *vcpu);
 	u64 (*get_pdptr)(struct kvm_vcpu *vcpu, int index);
-	int (*page_fault)(struct kvm_vcpu *vcpu, gva_t gva, u32 err,
-			  bool prefault);
-	void (*inject_page_fault)(struct kvm_vcpu *vcpu,
-				  struct x86_exception *fault);
-	gpa_t (*gva_to_gpa)(struct kvm_vcpu *vcpu, gva_t gva, u32 access,
-			    struct x86_exception *exception);
-	gpa_t (*translate_gpa)(struct kvm_vcpu *vcpu, gpa_t gpa, u32 access,
-			       struct x86_exception *exception);
-	int (*sync_page)(struct kvm_vcpu *vcpu,
-			 struct kvm_mmu_page *sp);
+
+	/* 处理缺页异常的回调函数 */
+	int (*page_fault)(struct kvm_vcpu *vcpu, gva_t gva, u32 err, bool prefault);
+	void (*inject_page_fault)(struct kvm_vcpu *vcpu, struct x86_exception *fault);
+
+	/* 用于虚拟到物理地址转换的函数 */
+	gpa_t (*gva_to_gpa)(struct kvm_vcpu *vcpu, gva_t gva, u32 access, struct x86_exception *exception);
+	gpa_t (*translate_gpa)(struct kvm_vcpu *vcpu, gpa_t gpa, u32 access, struct x86_exception *exception);
+
+	/* 同步和使TLB条目失效的回调函数 */
+	int (*sync_page)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp);
 	void (*invlpg)(struct kvm_vcpu *vcpu, gva_t gva);
-	void (*update_pte)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp,
-			   u64 *spte, const void *pte);
-	hpa_t root_hpa;
+
+	/* 更新页表项的回调函数 */
+	void (*update_pte)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp, u64 *spte, const void *pte);
+
+	/* MMU配置和属性 */
+	hpa_t root_hpa; //指向ept页表中第一级页表的物理地址，类似于cr3寄存器
 	int root_level;
 	int shadow_root_level;
 	union kvm_mmu_page_role base_role;
-	bool direct_map;
+	bool direct_map; //是否使用直接映射(ept)
 
-	/*
-	 * Bitmap; bit set = permission fault
-	 * Byte index: page fault error code [4:1]
-	 * Bit index: pte permissions in ACC_* format
-	 */
+	/* 用于页故障的权限位图 */
 	u8 permissions[16];
 
+	/* PAE模式特定的属性 */
 	u64 *pae_root;
 	u64 *lm_root;
 
-	/*
-	 * check zero bits on shadow page table entries, these
-	 * bits include not only hardware reserved bits but also
-	 * the bits spte never used.
-	 */
+	/* 用于检查影子和客户页表项中零位的位掩码 */
 	struct rsvd_bits_validate shadow_zero_check;
-
 	struct rsvd_bits_validate guest_rsvd_check;
 
-	/*
-	 * Bitmap: bit set = last pte in walk
-	 * index[0:1]: level (zero-based)
-	 * index[2]: pte.ps
-	 */
+	/* 表示步进中的最后一个PTE的位图 */
 	u8 last_pte_bitmap;
 
+	/* NX（不执行）位和基于模式的转换函数 */
 	bool nx;
-
-	u64 pdptrs[4]; /* pae */
+	u64 pdptrs[4]; /* PAE */
+	
 };
+
 
 enum pmc_type {
 	KVM_PMC_GP = 0,
