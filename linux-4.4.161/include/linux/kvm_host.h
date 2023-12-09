@@ -517,12 +517,24 @@ void kvm_exit(void);
 void kvm_get_kvm(struct kvm *kvm);
 void kvm_put_kvm(struct kvm *kvm);
 
+/*
+ * 获取指定地址空间ID（as_id）的内存槽结构指针的辅助函数。
+ * 参数kvm是包含内存槽信息的主KVM结构，as_id是地址空间ID。
+ * as_id可能是0或1，普通虚拟机用的ram则为0，如果是smm的模拟则为1.
+ * 返回指定地址空间ID的内存槽结构指针。
+ */
 static inline struct kvm_memslots *__kvm_memslots(struct kvm *kvm, int as_id)
 {
+	/*
+	 * rcu_dereference_check函数用于在RCU读取保护下获取指定地址空间ID的内存槽结构指针。
+	 * 这里检查是否处于srcu_read_lock保护中，或者是否持有slots_lock锁。
+	 * 如果满足条件，允许访问内存槽结构；否则，返回NULL。
+	 */
 	return rcu_dereference_check(kvm->memslots[as_id],
-			srcu_read_lock_held(&kvm->srcu)
-			|| lockdep_is_held(&kvm->slots_lock));
+		srcu_read_lock_held(&kvm->srcu) ||
+		lockdep_is_held(&kvm->slots_lock));
 }
+
 
 static inline struct kvm_memslots *kvm_memslots(struct kvm *kvm)
 {
@@ -536,17 +548,32 @@ static inline struct kvm_memslots *kvm_vcpu_memslots(struct kvm_vcpu *vcpu)
 	return __kvm_memslots(vcpu->kvm, as_id);
 }
 
+/*
+ * 将内存槽ID转换为内存槽结构的辅助函数。
+ * 参数slots是包含内存槽信息的结构体，而id是要查找的内存槽的ID。
+ * 返回对应ID的内存槽结构指针。
+ */
 static inline struct kvm_memory_slot *
 id_to_memslot(struct kvm_memslots *slots, int id)
 {
+	/* 
+	 * 通过id_to_index数组找到给定ID对应的内存槽在memslots数组中的索引。
+	 * 这里使用的是预先计算好的索引数组，可快速找到对应内存槽的位置。
+	 */
 	int index = slots->id_to_index[id];
 	struct kvm_memory_slot *slot;
 
+	/* 
+	 * 根据索引获取对应的内存槽结构。
+	 * WARN_ON用于发出警告，确保获取的内存槽结构的ID与期望的ID相匹配。
+	 */
 	slot = &slots->memslots[index];
-
 	WARN_ON(slot->id != id);
+
+	/* 返回对应ID的内存槽结构指针。 */
 	return slot;
 }
+
 
 /*
  * KVM_SET_USER_MEMORY_REGION ioctl allows the following operations:

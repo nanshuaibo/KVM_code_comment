@@ -92,7 +92,9 @@ struct kvm_memory_region {
 	__u64 memory_size; /* bytes */
 };
 
-/* for KVM_SET_USER_MEMORY_REGION */
+/* for KVM_SET_USER_MEMORY_REGION
+  通过这个结构体可以将虚拟机的物理地址对应到qemu进程短的虚拟地址
+*/
 struct kvm_userspace_memory_region {
 	__u32 slot; //内存区间所在的插槽
 	/*当flags包含KVM_SET_USER_MEMORY_REGION标识时

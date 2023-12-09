@@ -321,7 +321,7 @@ struct kvm_mmu {
 	/* NX（不执行）位和基于模式的转换函数 */
 	bool nx;
 	u64 pdptrs[4]; /* PAE */
-	
+
 };
 
 
@@ -590,12 +590,13 @@ struct kvm_vcpu_arch {
 };
 
 struct kvm_lpage_info {
-	int write_count;
+	//新版本改为了disallow_lpage字段
+	int write_count; //表示当前的gfn是否支持大页，为1表示不支持大页
 };
 
 struct kvm_arch_memory_slot {
-	unsigned long *rmap[KVM_NR_PAGE_SIZES];
-	struct kvm_lpage_info *lpage_info[KVM_NR_PAGE_SIZES - 1];
+	unsigned long *rmap[KVM_NR_PAGE_SIZES]; //保存的gfn与其对应页表项的map，KVM_NR_PAGE_SIZES表示页表项的种类(4kb ,2mb,1gb,后两者称为大页)
+	struct kvm_lpage_info *lpage_info[KVM_NR_PAGE_SIZES - 1]; //保存的是大页的信息，所以元素个数为KVM_NR_PAGE_SIZES - 1
 };
 
 /*

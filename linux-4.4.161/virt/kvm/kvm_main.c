@@ -838,7 +838,7 @@ int __kvm_set_memory_region(struct kvm *kvm,
 	int as_id, id;
 	enum kvm_mr_change change;
 
-	r = check_memory_region_flags(mem);
+	r = check_memory_region_flags(mem);//内存区域flags的合法性检查
 	if (r)
 		goto out;
 
@@ -847,24 +847,42 @@ int __kvm_set_memory_region(struct kvm *kvm,
 	id = (u16)mem->slot;
 
 	/* General sanity checks */
-	if (mem->memory_size & (PAGE_SIZE - 1))
+	/*检查内存大小和物理地址是否是PAGE_SIZE的倍数*/
+	if (mem->memory_size & (PAGE_SIZE - 1)) //检查内存内存区域大小是否对齐
 		goto out;
-	if (mem->guest_phys_addr & (PAGE_SIZE - 1))
+	if (mem->guest_phys_addr & (PAGE_SIZE - 1)) //检查物理地址是否对齐
 		goto out;
 	/* We can read the guest memory with __xxx_user() later on. */
-	if ((id < KVM_USER_MEM_SLOTS) &&
-	    ((mem->userspace_addr & (PAGE_SIZE - 1)) ||
-	     !access_ok(VERIFY_WRITE,
-			(void __user *)(unsigned long)mem->userspace_addr,
-			mem->memory_size)))
-		goto out;
+	/* 
+	 * 检查内存槽ID是否在有效范围内。
+	 * 如果ID小于KVM_USER_MEM_SLOTS，表示该内存槽受到用户空间的约束。
+	 */
+	if (id < KVM_USER_MEM_SLOTS) {
+		/* 
+		 * 检查用户提供的内存区域地址是否是4KB对齐，以及该地址范围是否可写入。
+		 * 这是为了确保用户传递的内存参数是有效的。
+		 */
+		if ((mem->userspace_addr & (PAGE_SIZE - 1)) ||
+		    !access_ok(VERIFY_WRITE, (void __user *)(unsigned long)mem->userspace_addr, mem->memory_size))
+			goto out;
+	}
+
+	/* 
+	 * 确保地址空间ID（as_id）和内存槽ID（id）在有效范围内。
+	 * KVM_ADDRESS_SPACE_NUM和KVM_MEM_SLOTS_NUM是定义的常量，表示有效的地址空间数量和内存槽数量。
+	 */
 	if (as_id >= KVM_ADDRESS_SPACE_NUM || id >= KVM_MEM_SLOTS_NUM)
 		goto out;
+
+	/* 
+	 * 确保内存范围的组合不会导致溢出，即确保内存范围是有效的。
+	 * 这是通过检查内存的起始地址和大小的和是否溢出来完成的。
+	 */
 	if (mem->guest_phys_addr + mem->memory_size < mem->guest_phys_addr)
 		goto out;
 
-	slot = id_to_memslot(__kvm_memslots(kvm, as_id), id);
-	base_gfn = mem->guest_phys_addr >> PAGE_SHIFT;
+	slot = id_to_memslot(__kvm_memslots(kvm, as_id), id); 
+	base_gfn = mem->guest_phys_addr >> PAGE_SHIFT; 
 	npages = mem->memory_size >> PAGE_SHIFT;
 
 	if (npages > KVM_MEM_MAX_NR_PAGES)
@@ -877,44 +895,49 @@ int __kvm_set_memory_region(struct kvm *kvm,
 	new.npages = npages;
 	new.flags = mem->flags;
 
-	if (npages) {
-		if (!old.npages)
+	if (npages) { // 如果内存槽中有页
+		if (!old.npages) // 如果原内存槽中没有页，表示是新建内存槽
 			change = KVM_MR_CREATE;
-		else { /* Modify an existing slot. */
-			if ((mem->userspace_addr != old.userspace_addr) ||
-			    (npages != old.npages) ||
-			    ((new.flags ^ old.flags) & KVM_MEM_READONLY))
+		else { /* Modify an existing slot. */ // 否则，修改已存在的内存槽
+			if ((mem->userspace_addr != old.userspace_addr) || // 检查用户空间地址是否发生变化
+				(npages != old.npages) || // 检查页数是否发生变化
+				((new.flags ^ old.flags) & KVM_MEM_READONLY)) // 检查标志位中只读属性是否发生变化
 				goto out;
 
-			if (base_gfn != old.base_gfn)
+			if (base_gfn != old.base_gfn) // 如果基本页框号发生变化，表示移动内存槽
 				change = KVM_MR_MOVE;
-			else if (new.flags != old.flags)
+			else if (new.flags != old.flags) // 如果标志位发生变化但只是标志位，不影响页数和基本页框号，表示仅修改标志位
 				change = KVM_MR_FLAGS_ONLY;
-			else { /* Nothing to change. */
+			else { /* Nothing to change. */ // 如果没有发生变化，无需修改
 				r = 0;
 				goto out;
 			}
 		}
-	} else {
-		if (!old.npages)
+	} else { // 如果内存槽中没有页
+		if (!old.npages) // 如果原内存槽中也没有页，表示无需操作
 			goto out;
 
-		change = KVM_MR_DELETE;
-		new.base_gfn = 0;
-		new.flags = 0;
+		change = KVM_MR_DELETE; // 如果原内存槽中有页，表示删除内存槽
+		new.base_gfn = 0; // 删除后基本页框号设为0
+		new.flags = 0; // 删除后标志位清零
 	}
 
+	// 如果是创建新的内存槽（KVM_MR_CREATE）或移动内存槽（KVM_MR_MOVE）的操作
 	if ((change == KVM_MR_CREATE) || (change == KVM_MR_MOVE)) {
-		/* Check for overlaps */
-		r = -EEXIST;
+		// 检查是否与已存在的内存槽有重叠
+		r = -EEXIST; // 错误码默认设置为EEXIST，表示存在重叠
 		kvm_for_each_memslot(slot, __kvm_memslots(kvm, as_id)) {
+			// 跳过当前内存槽，不与自身比较
 			if (slot->id == id)
 				continue;
+			
+			// 检查新内存范围与当前内存槽是否有重叠
 			if (!((base_gfn + npages <= slot->base_gfn) ||
-			      (base_gfn >= slot->base_gfn + slot->npages)))
-				goto out;
+				(base_gfn >= slot->base_gfn + slot->npages)))
+				goto out; // 存在重叠，跳转到标签out，表示操作失败
 		}
 	}
+
 
 	/* Free page dirty bitmap if unneeded */
 	if (!(new.flags & KVM_MEM_LOG_DIRTY_PAGES))
@@ -974,8 +997,8 @@ int __kvm_set_memory_region(struct kvm *kvm,
 		memset(&new.arch, 0, sizeof(new.arch));
 	}
 
-	update_memslots(slots, &new);
-	old_memslots = install_new_memslots(kvm, as_id, slots);
+	update_memslots(slots, &new); //memslots是根据gfn从大到小进行排序的，对memslots的顺序进行维护
+	old_memslots = install_new_memslots(kvm, as_id, slots); //更新memslots的结构 ， 根据rcu机制替换成刚刚分配的slots
 
 	kvm_arch_commit_memory_region(kvm, mem, &old, &new, change);
 
@@ -1013,6 +1036,7 @@ int kvm_set_memory_region(struct kvm *kvm,
 	int r;
 
 	mutex_lock(&kvm->slots_lock);
+	/*建立映射关系*/
 	r = __kvm_set_memory_region(kvm, mem);
 	mutex_unlock(&kvm->slots_lock);
 	return r;

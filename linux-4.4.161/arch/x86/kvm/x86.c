@@ -7900,8 +7900,9 @@ int kvm_arch_create_memslot(struct kvm *kvm, struct kvm_memory_slot *slot,
 		int level = i + 1;
 
 		lpages = gfn_to_index(slot->base_gfn + npages - 1,
-				      slot->base_gfn, level) + 1;
+				      slot->base_gfn, level) + 1;  //计算页面数量
 
+		/*根据页面大小分配对应的数据结构，rmap和lpage_info*/
 		slot->arch.rmap[i] =
 			kvm_kvzalloc(lpages * sizeof(*slot->arch.rmap[i]));
 		if (!slot->arch.rmap[i])
@@ -7914,6 +7915,7 @@ int kvm_arch_create_memslot(struct kvm *kvm, struct kvm_memory_slot *slot,
 		if (!slot->arch.lpage_info[i - 1])
 			goto out_free;
 
+		/*根据基地址（base_gfn）和页面数量（npages）设置 lpage_info 中的 write_count 字段。*/
 		if (slot->base_gfn & (KVM_PAGES_PER_HPAGE(level) - 1))
 			slot->arch.lpage_info[i - 1][0].write_count = 1;
 		if ((slot->base_gfn + npages) & (KVM_PAGES_PER_HPAGE(level) - 1))
@@ -7923,6 +7925,8 @@ int kvm_arch_create_memslot(struct kvm *kvm, struct kvm_memory_slot *slot,
 		 * If the gfn and userspace address are not aligned wrt each
 		 * other, or if explicitly asked to, disable large page
 		 * support for this slot
+		 * 如果gfn和用户空间地址在对齐方面不一致，或者明确要求禁用此插槽的大页面支持，
+		 * 则执行以下操作。
 		 */
 		if ((slot->base_gfn ^ ugfn) & (KVM_PAGES_PER_HPAGE(level) - 1) ||
 		    !kvm_largepages_enabled()) {
@@ -8017,49 +8021,45 @@ static void kvm_mmu_slot_apply_flags(struct kvm *kvm,
 }
 
 void kvm_arch_commit_memory_region(struct kvm *kvm,
-				const struct kvm_userspace_memory_region *mem,
-				const struct kvm_memory_slot *old,
-				const struct kvm_memory_slot *new,
-				enum kvm_mr_change change)
+                                   const struct kvm_userspace_memory_region *mem,
+                                   const struct kvm_memory_slot *old,
+                                   const struct kvm_memory_slot *new,
+                                   enum kvm_mr_change change)
 {
-	int nr_mmu_pages = 0;
+    int nr_mmu_pages = 0;
 
-	if (!kvm->arch.n_requested_mmu_pages)
-		nr_mmu_pages = kvm_mmu_calculate_mmu_pages(kvm);
+    // 如果尚未计算请求的 MMU 页面数量，则计算
+    if (!kvm->arch.n_requested_mmu_pages)
+        nr_mmu_pages = kvm_mmu_calculate_mmu_pages(kvm);
 
-	if (nr_mmu_pages)
-		kvm_mmu_change_mmu_pages(kvm, nr_mmu_pages);
+    // 如果存在 MMU 页面，则修改它们
+    if (nr_mmu_pages)
+        kvm_mmu_change_mmu_pages(kvm, nr_mmu_pages);
 
-	/*
-	 * Dirty logging tracks sptes in 4k granularity, meaning that large
-	 * sptes have to be split.  If live migration is successful, the guest
-	 * in the source machine will be destroyed and large sptes will be
-	 * created in the destination. However, if the guest continues to run
-	 * in the source machine (for example if live migration fails), small
-	 * sptes will remain around and cause bad performance.
-	 *
-	 * Scan sptes if dirty logging has been stopped, dropping those
-	 * which can be collapsed into a single large-page spte.  Later
-	 * page faults will create the large-page sptes.
-	 */
-	if ((change != KVM_MR_DELETE) &&
-		(old->flags & KVM_MEM_LOG_DIRTY_PAGES) &&
-		!(new->flags & KVM_MEM_LOG_DIRTY_PAGES))
-		kvm_mmu_zap_collapsible_sptes(kvm, new);
+    /*
+     * 脏页日志以4k的粒度跟踪spte，这意味着大的spte必须被拆分。
+     * 如果迁移成功，源机器上的客户机将被销毁，并且在目标机器上将创建大的spte。
+     * 然而，如果客户机继续在源机器上运行（例如，如果迁移失败），小的spte将继续存在并导致性能下降。
+     *
+     * 如果脏页日志已停止，则扫描spte，丢弃那些可以合并成单个大页面spte的spte。稍后的页面故障将创建大页面spte。
+     */
+    if ((change != KVM_MR_DELETE) &&
+        (old->flags & KVM_MEM_LOG_DIRTY_PAGES) &&
+        !(new->flags & KVM_MEM_LOG_DIRTY_PAGES))
+        kvm_mmu_zap_collapsible_sptes(kvm, new);
 
-	/*
-	 * Set up write protection and/or dirty logging for the new slot.
-	 *
-	 * For KVM_MR_DELETE and KVM_MR_MOVE, the shadow pages of old slot have
-	 * been zapped so no dirty logging staff is needed for old slot. For
-	 * KVM_MR_FLAGS_ONLY, the old slot is essentially the same one as the
-	 * new and it's also covered when dealing with the new slot.
-	 *
-	 * FIXME: const-ify all uses of struct kvm_memory_slot.
-	 */
-	if (change != KVM_MR_DELETE)
-		kvm_mmu_slot_apply_flags(kvm, (struct kvm_memory_slot *) new); //使能memslot的flags
+    /*
+     * 为新的插槽设置写保护和/或脏页日志。
+     *
+     * 对于KVM_MR_DELETE和KVM_MR_MOVE，旧插槽的影子页面已被清除，因此旧插槽不需要脏页日志。
+     * 对于KVM_MR_FLAGS_ONLY，旧插槽基本上与新插槽相同，在处理新插槽时也包含了旧插槽。
+     *
+     * FIXME: 将所有对struct kvm_memory_slot的使用都改为const。
+     */
+    if (change != KVM_MR_DELETE)
+        kvm_mmu_slot_apply_flags(kvm, (struct kvm_memory_slot *)new); // 使能 memslot 的 flags
 }
+
 
 void kvm_arch_flush_shadow_all(struct kvm *kvm)
 {
