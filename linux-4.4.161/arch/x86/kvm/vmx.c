@@ -5973,9 +5973,13 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu)
 	u32 error_code;
 	int gla_validity;
 
+	//从vmcs中读取退出信息
 	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 
+	//从退出信息中读取gla有限性
 	gla_validity = (exit_qualification >> 7) & 0x3;
+
+	//如果 GLA 有效性不在预期的范围内，输出错误信息并设置退出原因
 	if (gla_validity != 0x3 && gla_validity != 0x1 && gla_validity != 0) {
 		printk(KERN_ERR "EPT: Handling EPT violation failed!\n");
 		printk(KERN_ERR "EPT: GPA: 0x%lx, GVA: 0x%lx\n",
@@ -5993,24 +5997,35 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu)
 	 * "blocked by NMI" bit has to be set before next VM entry.
 	 * There are errata that may cause this bit to not be set:
 	 * AAK134, BY25.
+	 * 如果在执行 iret 从 NMI 中发生 EPT 违规，
+	 * 在下次 VM 进入之前必须设置 "blocked by NMI" 位。
+	 * 存在可能导致该位未设置的勘误：
+	 * AAK134，BY25。
 	 */
 	if (!(to_vmx(vcpu)->idt_vectoring_info & VECTORING_INFO_VALID_MASK) &&
 			cpu_has_virtual_nmis() &&
 			(exit_qualification & INTR_INFO_UNBLOCK_NMI))
 		vmcs_set_bits(GUEST_INTERRUPTIBILITY_INFO, GUEST_INTR_STATE_NMI);
-
+	
+	//读取gpa
 	gpa = vmcs_read64(GUEST_PHYSICAL_ADDRESS);
+
+	//tracepoint跟踪点，跟踪缺页异常
 	trace_kvm_page_fault(gpa, exit_qualification);
 
-	/* It is a write fault? */
+
+	//获取错误码
+	/* It is a write fault? 写入错误 */
 	error_code = exit_qualification & PFERR_WRITE_MASK;
-	/* It is a fetch fault? */
+	/* It is a fetch fault?  取指错误*/
 	error_code |= (exit_qualification << 2) & PFERR_FETCH_MASK;
-	/* ept page table is present? */
+	/* ept page table is present? EPT页表是否存在*/
 	error_code |= (exit_qualification >> 3) & PFERR_PRESENT_MASK;
 
+	//将退出信息保存到vcpu.kvm_arch_vcpu中
 	vcpu->arch.exit_qualification = exit_qualification;
 
+	//处理页面错误
 	return kvm_mmu_page_fault(vcpu, gpa, error_code, NULL, 0);
 }
 

@@ -153,9 +153,9 @@ struct pte_list_desc {
 
 struct kvm_shadow_walk_iterator {
 	u64 addr;
-	hpa_t shadow_addr;
+	hpa_t shadow_addr; //页表基地址
 	u64 *sptep;
-	int level;
+	int level; //四级页表
 	unsigned index;
 };
 
@@ -712,22 +712,46 @@ static void mmu_free_memory_cache_page(struct kvm_mmu_memory_cache *mc)
 		free_page((unsigned long)mc->objects[--mc->nobjs]);
 }
 
+/*
+ * mmu_topup_memory_caches - 补充MMU使用的内存缓存。
+ * @vcpu: 与MMU缓存相关联的虚拟CPU。
+ *
+ * 该函数负责重新填充虚拟CPU的Memory Management Unit（MMU）使用的各种内存缓存。
+ * 这些缓存通过预先分配和缓存某些数据结构来提高与内存相关的操作的性能。
+ *
+ * 该函数使用 mmu_topup_memory_cache 和 mmu_topup_memory_cache_page 函数，
+ * 以填充所需数量的条目或页面。
+ *
+ * 参数：
+ *   - vcpu: 与MMU相关联的虚拟CPU结构的指针。
+ *
+ * 返回值：
+ *   - 成功时返回0。
+ *   - 如果在缓存补充期间发生故障，则返回错误代码。
+ */
 static int mmu_topup_memory_caches(struct kvm_vcpu *vcpu)
 {
-	int r;
+    int r;
 
-	r = mmu_topup_memory_cache(&vcpu->arch.mmu_pte_list_desc_cache,
-				   pte_list_desc_cache, 8 + PTE_PREFETCH_NUM);
-	if (r)
-		goto out;
-	r = mmu_topup_memory_cache_page(&vcpu->arch.mmu_page_cache, 8);
-	if (r)
-		goto out;
-	r = mmu_topup_memory_cache(&vcpu->arch.mmu_page_header_cache,
-				   mmu_page_header_cache, 4);
+    // 补充PTE列表描述符缓存
+    r = mmu_topup_memory_cache(&vcpu->arch.mmu_pte_list_desc_cache,
+                               pte_list_desc_cache, 8 + PTE_PREFETCH_NUM);
+    if (r)
+        goto out;
+
+    // 补充页面缓存
+    r = mmu_topup_memory_cache_page(&vcpu->arch.mmu_page_cache, 8);
+    if (r)
+        goto out;
+
+    // 补充页面头缓存
+    r = mmu_topup_memory_cache(&vcpu->arch.mmu_page_header_cache,
+                               mmu_page_header_cache, 4);
+
 out:
-	return r;
+    return r;
 }
+
 
 static void mmu_free_memory_caches(struct kvm_vcpu *vcpu)
 {
@@ -2065,7 +2089,7 @@ static void init_shadow_page_table(struct kvm_mmu_page *sp)
 	int i;
 
 	for (i = 0; i < PT64_ENT_PER_PAGE; ++i)
-		sp->spt[i] = 0ull;
+		sp->spt[i] = 0ull; //将所有的页目录项初始化为0
 }
 
 static void __clear_sp_write_flooding_count(struct kvm_mmu_page *sp)
@@ -2085,6 +2109,32 @@ static bool is_obsolete_sp(struct kvm *kvm, struct kvm_mmu_page *sp)
 	return unlikely(sp->mmu_valid_gen != kvm->arch.mmu_valid_gen);
 }
 
+/*
+ * kvm_mmu_get_page - 获取或分配KVM MMU页面。
+ * @vcpu: 虚拟CPU结构指针。
+ * @gfn: 页面帧号（GFN）。
+ * @gaddr: 虚拟地址。
+ * @level: 页表级别。
+ * @direct: 是否是直接映射。
+ * @access: 访问权限。
+ * @parent_pte: 用于输出页面的父页表项。
+ *
+ * 该函数用于获取或分配KVM Memory Management Unit（MMU）页面。页面可以是直接映射的，也可以是经过多级页表映射的。
+ * 函数通过给定的GFN、虚拟地址和其他参数，查找已存在的MMU页面或分配新的MMU页面，并设置相应的角色信息。
+ *
+ * 参数：
+ *   - vcpu: 虚拟CPU结构指针。
+ *   - gfn: 页面帧号（GFN）。
+ *   - gaddr: 虚拟地址。
+ *   - level: 页表级别。
+ *   - direct: 是否是直接映射。
+ *   - access: 访问权限。
+ *   - parent_pte: 用于输出页面的父页表项。
+ *
+ * 返回值：
+ *   - 成功时返回指向KVM MMU页面结构的指针。
+ *   - 如果分配失败，返回NULL。
+ */
 static struct kvm_mmu_page *kvm_mmu_get_page(struct kvm_vcpu *vcpu,
 					     gfn_t gfn,
 					     gva_t gaddr,
@@ -2098,18 +2148,23 @@ static struct kvm_mmu_page *kvm_mmu_get_page(struct kvm_vcpu *vcpu,
 	struct kvm_mmu_page *sp;
 	bool need_sync = false;
 
+	// 初始化MMU页面角色信息
 	role = vcpu->arch.mmu.base_role;
 	role.level = level;
 	role.direct = direct;
 	if (role.direct)
 		role.cr4_pae = 0;
 	role.access = access;
+
+	// 处理32位PAE根页表的情况
 	if (!vcpu->arch.mmu.direct_map
 	    && vcpu->arch.mmu.root_level <= PT32_ROOT_LEVEL) {
 		quadrant = gaddr >> (PAGE_SHIFT + (PT64_PT_BITS * level));
 		quadrant &= (1 << ((PT32_PT_BITS - PT64_PT_BITS) * level)) - 1;
 		role.quadrant = quadrant;
 	}
+
+	// 遍历与给定GFN关联的MMU页面链表
 	for_each_gfn_sp(vcpu->kvm, sp, gfn) {
 		if (is_obsolete_sp(vcpu->kvm, sp))
 			continue;
@@ -2117,44 +2172,77 @@ static struct kvm_mmu_page *kvm_mmu_get_page(struct kvm_vcpu *vcpu,
 		if (!need_sync && sp->unsync)
 			need_sync = true;
 
+		// 检查MMU页面的角色信息是否匹配
 		if (sp->role.word != role.word)
 			continue;
 
+		// 处理未同步的MMU页面
 		if (sp->unsync && kvm_sync_page_transient(vcpu, sp))
 			break;
 
+		// 将当前MMU页面添加到父页表项链表中
 		mmu_page_add_parent_pte(vcpu, sp, parent_pte);
+
+		// 处理未同步的子页面
 		if (sp->unsync_children) {
 			kvm_make_request(KVM_REQ_MMU_SYNC, vcpu);
 			kvm_mmu_mark_parents_unsync(sp);
 		} else if (sp->unsync)
 			kvm_mmu_mark_parents_unsync(sp);
 
+		// 清零写洪泛计数
 		__clear_sp_write_flooding_count(sp);
+
+		// 跟踪MMU页面获取事件
 		trace_kvm_mmu_get_page(sp, false);
+
+		// 返回已存在的MMU页面
 		return sp;
 	}
+
+	// 统计MMU页面缓存未命中
 	++vcpu->kvm->stat.mmu_cache_miss;
+
+	// 分配新的MMU页面
 	sp = kvm_mmu_alloc_page(vcpu, parent_pte, direct);
 	if (!sp)
 		return sp;
+
+	// 设置MMU页面的GFN和角色信息
 	sp->gfn = gfn;
 	sp->role = role;
+
+	// 将MMU页面添加到哈希链表中
 	hlist_add_head(&sp->hash_link,
 		&vcpu->kvm->arch.mmu_page_hash[kvm_page_table_hashfn(gfn)]);
+
+	// 处理非直接映射的情况
 	if (!direct) {
+		// 如果需要，执行RMAP写保护
 		if (rmap_write_protect(vcpu, gfn))
 			kvm_flush_remote_tlbs(vcpu->kvm);
+
+		// 如果级别大于页表级别且存在未同步的页面，则同步页面
 		if (level > PT_PAGE_TABLE_LEVEL && need_sync)
 			kvm_sync_pages(vcpu, gfn);
 
+		// 统计影子页表中的页面
 		account_shadowed(vcpu->kvm, sp);
 	}
+
+	// 设置MMU页面的有效生成数
 	sp->mmu_valid_gen = vcpu->kvm->arch.mmu_valid_gen;
+
+	// 初始化影子页表
 	init_shadow_page_table(sp);
+
+	// 跟踪MMU页面获取事件
 	trace_kvm_mmu_get_page(sp, true);
+
+	// 返回分配的MMU页面
 	return sp;
 }
+
 
 static void shadow_walk_init(struct kvm_shadow_walk_iterator *iterator,
 			     struct kvm_vcpu *vcpu, u64 addr)
@@ -2205,21 +2293,45 @@ static void shadow_walk_next(struct kvm_shadow_walk_iterator *iterator)
 	return __shadow_walk_next(iterator, *iterator->sptep);
 }
 
+/*
+ * link_shadow_page - 将阴影页表页面与父页面关联，并设置相应的SPTE。
+ * @sptep: 指向父页表项的指针。
+ * @sp: 指向阴影页表页面的指针。
+ * @accessed: 是否已访问。
+ *
+ * 该函数用于将阴影页表页面与其父页面关联，并根据给定的访问信息设置相应的SPTE（Shadow Page Table Entry）。
+ * 阴影页表页面用于在虚拟机监视器中跟踪和处理VMX或KVM虚拟机中的页表项。
+ *
+ * 参数：
+ *   - sptep: 指向父页表项的指针。
+ *   - sp: 指向阴影页表页面的指针。
+ *   - accessed: 是否已访问。
+ *
+ * 该函数执行以下操作：
+ *   1. 构建SPTE，包括将阴影页表的物理地址设置在SPTE中，并设置相关的掩码。
+ *   2. 根据是否已访问，设置SPTE中的"访问"掩码。
+ *   3. 将构建好的SPTE设置到父页表项中。
+ */
 static void link_shadow_page(u64 *sptep, struct kvm_mmu_page *sp, bool accessed)
 {
 	u64 spte;
 
+	// 检查VMX EPT相关掩码是否正确
 	BUILD_BUG_ON(VMX_EPT_READABLE_MASK != PT_PRESENT_MASK ||
 			VMX_EPT_WRITABLE_MASK != PT_WRITABLE_MASK);
 
+	// 构建SPTE
 	spte = __pa(sp->spt) | PT_PRESENT_MASK | PT_WRITABLE_MASK |
 	       shadow_user_mask | shadow_x_mask;
 
+	// 如果已访问，设置"访问"掩码
 	if (accessed)
 		spte |= shadow_accessed_mask;
 
+	// 设置SPTE到父页表项中
 	mmu_spte_set(sptep, spte);
 }
+
 
 static void validate_direct_spte(struct kvm_vcpu *vcpu, u64 *sptep,
 				   unsigned direct_access)
@@ -2472,6 +2584,9 @@ static int mmu_need_write_protect(struct kvm_vcpu *vcpu, gfn_t gfn,
 		if (!can_unsync)
 			return 1;
 
+3
+
+
 		if (s->role.level != PT_PAGE_TABLE_LEVEL)
 			return 1;
 
@@ -2565,7 +2680,7 @@ static int set_spte(struct kvm_vcpu *vcpu, u64 *sptep,
 	}
 
 set_pte:
-	if (mmu_spte_update(sptep, spte))
+	if (mmu_spte_update(sptep, spte)) //设置页表项
 		kvm_flush_remote_tlbs(vcpu->kvm);
 done:
 	return ret;
@@ -2605,7 +2720,7 @@ static void mmu_set_spte(struct kvm_vcpu *vcpu, u64 *sptep,
 	}
 
 	if (set_spte(vcpu, sptep, pte_access, level, gfn, pfn, speculative,
-	      true, host_writable)) {
+	      true, host_writable)) { //设置sptep指向页表
 		if (write_fault)
 			*emulate = 1;
 		kvm_make_request(KVM_REQ_TLB_FLUSH, vcpu);
@@ -2715,6 +2830,24 @@ static void direct_pte_prefetch(struct kvm_vcpu *vcpu, u64 *sptep)
 	__direct_pte_prefetch(vcpu, sp, sptep);
 }
 
+/*
+ * __direct_map - 将虚拟地址映射到直接映射页表，执行写保护和访问权限设置。
+ * @vcpu: 虚拟CPU结构指针。
+ * @v: 虚拟地址。
+ * @write: 是否执行写保护。
+ * @map_writable: 是否映射为可写。
+ * @level: 映射的页表级别。
+ * @gfn: 页面帧号（GFN）。
+ * @pfn: 物理帧号（PFN）。
+ * @prefault: 是否预取页面。
+ *
+ * 该函数用于将给定的虚拟地址（v）映射到直接映射ept页表，并设置写保护和访问权限。
+ * 映射的页表级别由参数 level 指定，同时涉及到页面帧号（GFN）和物理帧号（PFN）。
+
+ *
+ * 返回值：
+ *   - emulated：是否进行了模拟。
+ */
 static int __direct_map(struct kvm_vcpu *vcpu, gpa_t v, int write,
 			int map_writable, int level, gfn_t gfn, pfn_t pfn,
 			bool prefault)
@@ -2724,34 +2857,42 @@ static int __direct_map(struct kvm_vcpu *vcpu, gpa_t v, int write,
 	int emulate = 0;
 	gfn_t pseudo_gfn;
 
+	// 检查根页表是否有效
 	if (!VALID_PAGE(vcpu->arch.mmu.root_hpa))
 		return 0;
 
+	// 遍历影子页表条目
 	for_each_shadow_entry(vcpu, (u64)gfn << PAGE_SHIFT, iterator) {
 		if (iterator.level == level) {
+			// 设置SPTE并执行写保护和访问权限设置
 			mmu_set_spte(vcpu, iterator.sptep, ACC_ALL,
 				     write, &emulate, level, gfn, pfn,
 				     prefault, map_writable);
+			// 预取PT所在的页表项
 			direct_pte_prefetch(vcpu, iterator.sptep);
+			// 更新统计信息
 			++vcpu->stat.pf_fixed;
 			break;
 		}
 
-		drop_large_spte(vcpu, iterator.sptep);
-		if (!is_shadow_present_pte(*iterator.sptep)) {
+		// 处理大页面
+		drop_large_spte(vcpu, iterator.sptep);  
+		if (!is_shadow_present_pte(*iterator.sptep)) {//判断当前页表是否存在
 			u64 base_addr = iterator.addr;
 
 			base_addr &= PT64_LVL_ADDR_MASK(iterator.level);
 			pseudo_gfn = base_addr >> PAGE_SHIFT;
+			// 获取或创建下一级页表
 			sp = kvm_mmu_get_page(vcpu, pseudo_gfn, iterator.addr,
 					      iterator.level - 1,
 					      1, ACC_ALL, iterator.sptep);
-
+			// 将当前页表项与新页表关联
 			link_shadow_page(iterator.sptep, sp, true);
 		}
 	}
 	return emulate;
 }
+
 
 static void kvm_send_hwpoison_signal(unsigned long address, struct task_struct *tsk)
 {
@@ -2971,7 +3112,7 @@ static bool fast_page_fault(struct kvm_vcpu *vcpu, gva_t gva, int level,
 	 * Currently, fast page fault only works for direct mapping since
 	 * the gfn is not stable for indirect shadow page.
 	 * See Documentation/virtual/kvm/locking.txt to get more detail.
-	 * fast page fault仅适用于直接映射（direct mapping），
+	 * fast page fault仅适用于直接映射（direct mapping）（ept页表存在），
 	 * 而不适用于间接影子页（indirect shadow page）。
 	 */
 	ret = fast_pf_fix_direct_spte(vcpu, sp, iterator.sptep, spte);
@@ -3455,6 +3596,8 @@ bool kvm_can_do_async_pf(struct kvm_vcpu *vcpu)
 	return kvm_x86_ops->interrupt_allowed(vcpu);
 }
 
+//这里的异步指当ept页表建立完成，宿主机操作系统将虚拟机对应的qemu虚拟地址的物理内存交互出去，
+//当虚拟机访问这段内存，也会产生页错误
 static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
 			 gva_t gva, pfn_t *pfn, bool write, bool *writable)
 {
@@ -3503,16 +3646,16 @@ static int tdp_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code,
 	int write = error_code & PFERR_WRITE_MASK;
 	bool map_writable;
 
-	MMU_WARN_ON(!VALID_PAGE(vcpu->arch.mmu.root_hpa));
+	MMU_WARN_ON(!VALID_PAGE(vcpu->arch.mmu.root_hpa)); //检查根页面是否有效
 
 	if (unlikely(error_code & PFERR_RSVD_MASK)) {
-		r = handle_mmio_page_fault(vcpu, gpa, true);
+		r = handle_mmio_page_fault(vcpu, gpa, true); //处理内存映射页错误
 
 		if (likely(r != RET_MMIO_PF_INVALID))
 			return r;
 	}
 
-	r = mmu_topup_memory_caches(vcpu);
+	r = mmu_topup_memory_caches(vcpu); //保证缓冲有足够的空间
 	if (r)
 		return r;
 
@@ -3526,13 +3669,13 @@ static int tdp_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code,
 		gfn &= ~(KVM_PAGES_PER_HPAGE(level) - 1);
 	}
 
-	if (fast_page_fault(vcpu, gpa, level, error_code))
+	if (fast_page_fault(vcpu, gpa, level, error_code)) //ept页表存在，并且是写保护产生的ept异常
 		return 0;
 
 	mmu_seq = vcpu->kvm->mmu_notifier_seq;
 	smp_rmb();
 
-	if (try_async_pf(vcpu, prefault, gfn, gpa, &pfn, write, &map_writable))
+	if (try_async_pf(vcpu, prefault, gfn, gpa, &pfn, write, &map_writable)) //对该页进行异步处理
 		return 0;
 
 	if (handle_abnormal_pfn(vcpu, 0, gfn, pfn, ACC_ALL, &r))
@@ -4418,6 +4561,7 @@ int kvm_mmu_page_fault(struct kvm_vcpu *vcpu, gva_t cr2, u32 error_code,
 	int r, emulation_type = EMULTYPE_RETRY;
 	enum emulation_result er;
 
+	// 调用架构相关的缺页异常处理函数arch/x86/kvm/mmu.c(init_kvm_tdp_mmu()中初始化为tdp_page_fault)
 	r = vcpu->arch.mmu.page_fault(vcpu, cr2, error_code, false);
 	if (r < 0)
 		goto out;
@@ -4427,16 +4571,18 @@ int kvm_mmu_page_fault(struct kvm_vcpu *vcpu, gva_t cr2, u32 error_code,
 		goto out;
 	}
 
+	// 检查是否是 MMIO（内存映射 I/O）页面错误
 	if (is_mmio_page_fault(vcpu, cr2))
 		emulation_type = 0;
-
+	
+	// 使用 x86_emulate_instruction 函数模拟指令执行
 	er = x86_emulate_instruction(vcpu, cr2, emulation_type, insn, insn_len);
 
 	switch (er) {
 	case EMULATE_DONE:
-		return 1;
+		return 1; //模拟成功
 	case EMULATE_USER_EXIT:
-		++vcpu->stat.mmio_exits;
+		++vcpu->stat.mmio_exits; // 增加 MMIO 退出的统计计数
 		/* fall through */
 	case EMULATE_FAIL:
 		return 0;

@@ -65,7 +65,7 @@
 #define EXIT_REASON_TPR_BELOW_THRESHOLD 43
 #define EXIT_REASON_APIC_ACCESS         44
 #define EXIT_REASON_EOI_INDUCED         45  
-#define EXIT_REASON_EPT_VIOLATION       48 //48、49、62为EPT导致
+#define EXIT_REASON_EPT_VIOLATION       48 //48、49、62为EPT导致,GPA->HPA如果发送缺页异常虚拟机产生vm exit
 #define EXIT_REASON_EPT_MISCONFIG       49
 #define EXIT_REASON_INVEPT              50
 #define EXIT_REASON_RDTSCP              51
