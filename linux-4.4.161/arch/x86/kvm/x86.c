@@ -6108,7 +6108,7 @@ static int inject_pending_event(struct kvm_vcpu *vcpu, bool req_int_win)
 		--vcpu->arch.nmi_pending;
 		vcpu->arch.nmi_injected = true;
 		kvm_x86_ops->set_nmi(vcpu);
-	} else if (kvm_cpu_has_injectable_intr(vcpu)) {
+	} else if (kvm_cpu_has_injectable_intr(vcpu)) { //判断是否有需要注入
 		/*
 		 * Because interrupts can be injected asynchronously, we are
 		 * calling check_nested_events again here to avoid a race condition.
@@ -6121,8 +6121,8 @@ static int inject_pending_event(struct kvm_vcpu *vcpu, bool req_int_win)
 			if (r != 0)
 				return r;
 		}
-		if (kvm_x86_ops->interrupt_allowed(vcpu)) {
-			kvm_queue_interrupt(vcpu, kvm_cpu_get_interrupt(vcpu),
+		if (kvm_x86_ops->interrupt_allowed(vcpu)) { //判断当前vcpu是否允许中断注入
+			kvm_queue_interrupt(vcpu, kvm_cpu_get_interrupt(vcpu),/*获取当前的中断向量号*/
 					    false);
 			kvm_x86_ops->set_irq(vcpu);
 		}
@@ -6549,7 +6549,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 			goto out;
 		}
 
-		if (inject_pending_event(vcpu, req_int_win) != 0)
+		if (inject_pending_event(vcpu, req_int_win) != 0) //进行事件注入
 			req_immediate_exit = true;
 		/* enable NMI/IRQ window open exits if needed */
 		else {

@@ -5108,7 +5108,7 @@ static void vmx_inject_irq(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	uint32_t intr;
-	int irq = vcpu->arch.interrupt.nr;
+	int irq = vcpu->arch.interrupt.nr; //获取中断向量号
 
 	trace_kvm_inj_virq(irq);
 
@@ -5128,7 +5128,7 @@ static void vmx_inject_irq(struct kvm_vcpu *vcpu)
 			     vmx->vcpu.arch.event_exit_inst_len);
 	} else
 		intr |= INTR_TYPE_EXT_INTR;
-	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, intr);
+	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, intr); //将中断向量号写入vmcs区域
 }
 
 static void vmx_inject_nmi(struct kvm_vcpu *vcpu)
@@ -11002,7 +11002,7 @@ static struct kvm_x86_ops vmx_x86_ops = {
 	.set_interrupt_shadow = vmx_set_interrupt_shadow,
 	.get_interrupt_shadow = vmx_get_interrupt_shadow,
 	.patch_hypercall = vmx_patch_hypercall,
-	.set_irq = vmx_inject_irq,
+	.set_irq = vmx_inject_irq, //中断注入函数
 	.set_nmi = vmx_inject_nmi,
 	.queue_exception = vmx_queue_exception,
 	.cancel_injection = vmx_cancel_injection,
