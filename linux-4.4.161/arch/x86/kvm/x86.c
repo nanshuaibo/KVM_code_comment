@@ -3803,45 +3803,65 @@ long kvm_arch_vm_ioctl(struct file *filp,
 	case KVM_GET_NR_MMU_PAGES:
 		r = kvm_vm_ioctl_get_nr_mmu_pages(kvm);
 		break;
-	case KVM_CREATE_IRQCHIP: {
-		struct kvm_pic *vpic;
+/*pic设备的创建分为kvm和qemu两部分*/
+case KVM_CREATE_IRQCHIP: {
+    // 声明一个指向 struct kvm_pic 结构的指针
+    struct kvm_pic *vpic;
 
-		mutex_lock(&kvm->lock);
-		r = -EEXIST;
-		if (kvm->arch.vpic)
-			goto create_irqchip_unlock;
-		r = -EINVAL;
-		if (atomic_read(&kvm->online_vcpus))
-			goto create_irqchip_unlock;
-		r = -ENOMEM;
-		vpic = kvm_create_pic(kvm);
-		if (vpic) {
-			r = kvm_ioapic_init(kvm);
-			if (r) {
-				mutex_lock(&kvm->slots_lock);
-				kvm_destroy_pic(vpic);
-				mutex_unlock(&kvm->slots_lock);
-				goto create_irqchip_unlock;
-			}
-		} else
-			goto create_irqchip_unlock;
-		r = kvm_setup_default_irq_routing(kvm);
-		if (r) {
-			mutex_lock(&kvm->slots_lock);
-			mutex_lock(&kvm->irq_lock);
-			kvm_ioapic_destroy(kvm);
-			kvm_destroy_pic(vpic);
-			mutex_unlock(&kvm->irq_lock);
-			mutex_unlock(&kvm->slots_lock);
-			goto create_irqchip_unlock;
-		}
-		/* Write kvm->irq_routing before kvm->arch.vpic.  */
-		smp_wmb();
-		kvm->arch.vpic = vpic;
-	create_irqchip_unlock:
-		mutex_unlock(&kvm->lock);
-		break;
-	}
+    // 获取全局锁，确保此操作是原子的
+    mutex_lock(&kvm->lock);
+
+    // 检查是否已经存在虚拟 PIC（Programmable Interrupt Controller）
+    r = -EEXIST;
+    if (kvm->arch.vpic)
+        goto create_irqchip_unlock;
+
+    // 检查是否有在线的虚拟 CPU
+    r = -EINVAL;
+    if (atomic_read(&kvm->online_vcpus))
+        goto create_irqchip_unlock;
+
+    // 分配并初始化一个新的虚拟 PIC 结构
+    r = -ENOMEM;
+    vpic = kvm_create_pic(kvm);
+    if (vpic) {
+        // 初始化虚拟 IOAPIC（I/O Advanced Programmable Interrupt Controller）
+        r = kvm_ioapic_init(kvm);
+        if (r) {
+            // 如果初始化失败，则销毁已创建的虚拟 PIC 结构
+            mutex_lock(&kvm->slots_lock);
+            kvm_destroy_pic(vpic);
+            mutex_unlock(&kvm->slots_lock);
+            goto create_irqchip_unlock;
+        }
+    } else
+        goto create_irqchip_unlock;
+
+    // 设置默认的中断路由
+    r = kvm_setup_default_irq_routing(kvm);
+    if (r) {
+        // 如果设置失败，则销毁已创建的虚拟 PIC 和 IOAPIC 结构
+        mutex_lock(&kvm->slots_lock);
+        mutex_lock(&kvm->irq_lock);
+        kvm_ioapic_destroy(kvm);
+        kvm_destroy_pic(vpic);
+        mutex_unlock(&kvm->irq_lock);
+        mutex_unlock(&kvm->slots_lock);
+        goto create_irqchip_unlock;
+    }
+
+    // 写入 kvm->irq_routing 之前确保写入 kvm->arch.vpic
+    smp_wmb();
+
+    // 将创建的虚拟 PIC 结构赋值给 kvm->arch.vpic
+    kvm->arch.vpic = vpic;
+
+create_irqchip_unlock:
+    // 释放全局锁
+    mutex_unlock(&kvm->lock);
+    break;
+}
+
 	case KVM_CREATE_PIT:
 		u.pit_config.flags = KVM_PIT_SPEAKER_DUMMY;
 		goto create_pit;

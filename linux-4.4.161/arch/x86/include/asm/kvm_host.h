@@ -753,12 +753,12 @@ struct msr_data {
 };
 
 struct kvm_lapic_irq {
-	u32 vector;
-	u16 delivery_mode;
+	u32 vector; //中断向量号
+	u16 delivery_mode; //中断到cpu的传递模式
 	u16 dest_mode;
-	bool level;
-	u16 trig_mode;
-	u32 shorthand;
+	bool level; //电平触发模式
+	u16 trig_mode; //中断触发方式
+	u32 shorthand; //中断目标的方式
 	u32 dest_id;
 	bool msi_redir_hint;
 };

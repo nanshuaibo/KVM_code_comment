@@ -56,8 +56,11 @@ static void pic_unlock(struct kvm_pic *s)
 
 	spin_unlock(&s->lock);
 
+	//如果需要唤醒
 	if (wakeup) {
+		//遍历kvm中的每个vcpu
 		kvm_for_each_vcpu(i, vcpu, s->kvm) {
+			//检查vcpu是否接受pic中断
 			if (kvm_apic_accept_pic_intr(vcpu)) {
 				found = vcpu;
 				break;
@@ -66,8 +69,10 @@ static void pic_unlock(struct kvm_pic *s)
 
 		if (!found)
 			return;
-
+		
+		//向找到的vcpu挂起一个事件请求
 		kvm_make_request(KVM_REQ_EVENT, found);
+		//激活找到的vcpu
 		kvm_vcpu_kick(found);
 	}
 }
@@ -89,33 +94,39 @@ static void pic_clear_isr(struct kvm_kpic_state *s, int irq)
 }
 
 /*
- * set irq level. If an edge is detected, then the IRR is set to 1
+ * 设置中断请求级别。如果检测到边沿触发，那么IRR将被设置为1。
  */
 static inline int pic_set_irq1(struct kvm_kpic_state *s, int irq, int level)
 {
-	int mask, ret = 1;
-	mask = 1 << irq;
-	if (s->elcr & mask)	/* level triggered */
-		if (level) {
-			ret = !(s->irr & mask);
-			s->irr |= mask;
-			s->last_irr |= mask;
-		} else {
-			s->irr &= ~mask;
-			s->last_irr &= ~mask;
-		}
-	else	/* edge triggered */
-		if (level) {
-			if ((s->last_irr & mask) == 0) {
-				ret = !(s->irr & mask);
-				s->irr |= mask;
-			}
-			s->last_irr |= mask;
-		} else
-			s->last_irr &= ~mask;
+    int mask, ret = 1;
+    mask = 1 << irq;
 
-	return (s->imr & mask) ? -1 : ret;
+    // 如果是电平触发（level triggered）
+    if (s->elcr & mask) {
+        if (level) {
+            ret = !(s->irr & mask);
+            s->irr |= mask;
+            s->last_irr |= mask;
+        } else {
+            s->irr &= ~mask;
+            s->last_irr &= ~mask;
+        }
+    } else {  // 如果是边沿触发（edge triggered）
+        if (level) {
+            if ((s->last_irr & mask) == 0) {
+                ret = !(s->irr & mask);
+                s->irr |= mask;
+            }
+            s->last_irr |= mask;
+        } else {
+            s->last_irr &= ~mask;
+        }
+    }
+
+    // 如果中断被屏蔽（imr中对应位为1），返回-1；否则，返回ret
+    return (s->imr & mask) ? -1 : ret;
 }
+
 
 /*
  * return the highest priority found in mask (highest = smallest
@@ -162,24 +173,29 @@ static int pic_get_irq(struct kvm_kpic_state *s)
 }
 
 /*
- * raise irq to CPU if necessary. must be called every time the active
- * irq may change
+ * 如果需要，将中断传递给CPU。必须在每次活动中断可能发生变化时调用。
  */
 static void pic_update_irq(struct kvm_pic *s)
 {
-	int irq2, irq;
+    int irq2, irq;
 
-	irq2 = pic_get_irq(&s->pics[1]);
-	if (irq2 >= 0) {
-		/*
-		 * if irq request by slave pic, signal master PIC
-		 */
-		pic_set_irq1(&s->pics[0], 2, 1);
-		pic_set_irq1(&s->pics[0], 2, 0);
-	}
-	irq = pic_get_irq(&s->pics[0]);
-	pic_irq_request(s->kvm, irq >= 0);
+    // 获取第二个虚拟PIC中的中断
+    irq2 = pic_get_irq(&s->pics[1]);
+    if (irq2 >= 0) {
+        /*
+         * 如果由从属PIC发起中断请求，则向主PIC发出信号
+         */
+        pic_set_irq1(&s->pics[0], 2, 1);
+        pic_set_irq1(&s->pics[0], 2, 0);
+    }
+
+    // 获取主PIC中的中断
+    irq = pic_get_irq(&s->pics[0]);
+
+    // 根据主PIC中的中断状态，发起中断请求给KVM
+    pic_irq_request(s->kvm, irq >= 0);
 }
+
 
 void kvm_pic_update_irq(struct kvm_pic *s)
 {
@@ -196,9 +212,9 @@ int kvm_pic_set_irq(struct kvm_pic *s, int irq, int irq_source_id, int level)
 
 	pic_lock(s);
 	irq_level = __kvm_irq_line_state(&s->irq_states[irq],
-					 irq_source_id, level);
-	ret = pic_set_irq1(&s->pics[irq >> 3], irq & 7, irq_level);
-	pic_update_irq(s);
+					 irq_source_id, level); //计算出中断信号的电平信息
+	ret = pic_set_irq1(&s->pics[irq >> 3], irq & 7, irq_level);//设置对应中断芯片的状态
+	pic_update_irq(s); //更新中断控制器的状态
 	trace_kvm_pic_set_irq(irq >> 3, irq & 7, s->pics[irq >> 3].elcr,
 			      s->pics[irq >> 3].imr, ret == 0);
 	pic_unlock(s);
@@ -600,56 +616,62 @@ static const struct kvm_io_device_ops picdev_eclr_ops = {
 
 struct kvm_pic *kvm_create_pic(struct kvm *kvm)
 {
-	struct kvm_pic *s;
-	int ret;
+    struct kvm_pic *s;
+    int ret;
 
-	s = kzalloc(sizeof(struct kvm_pic), GFP_KERNEL);
-	if (!s)
-		return NULL;
-	spin_lock_init(&s->lock);
-	s->kvm = kvm;
-	s->pics[0].elcr_mask = 0xf8;
-	s->pics[1].elcr_mask = 0xde;
-	s->pics[0].pics_state = s;
-	s->pics[1].pics_state = s;
+    // 分配并初始化一个新的 kvm_pic 结构
+    s = kzalloc(sizeof(struct kvm_pic), GFP_KERNEL);
+    if (!s)
+        return NULL;
+    spin_lock_init(&s->lock);
+    s->kvm = kvm;
+    s->pics[0].elcr_mask = 0xf8;
+    s->pics[1].elcr_mask = 0xde;
+    s->pics[0].pics_state = s;
+    s->pics[1].pics_state = s;
 
-	/*
-	 * Initialize PIO device
-	 */
-	kvm_iodevice_init(&s->dev_master, &picdev_master_ops);
-	kvm_iodevice_init(&s->dev_slave, &picdev_slave_ops);
-	kvm_iodevice_init(&s->dev_eclr, &picdev_eclr_ops);
-	mutex_lock(&kvm->slots_lock);
-	ret = kvm_io_bus_register_dev(kvm, KVM_PIO_BUS, 0x20, 2,
-				      &s->dev_master);
-	if (ret < 0)
-		goto fail_unlock;
+    /*
+     * 初始化 PIO 设备
+     */
+    kvm_iodevice_init(&s->dev_master, &picdev_master_ops);
+    kvm_iodevice_init(&s->dev_slave, &picdev_slave_ops);
+    kvm_iodevice_init(&s->dev_eclr, &picdev_eclr_ops);
+    mutex_lock(&kvm->slots_lock);
 
-	ret = kvm_io_bus_register_dev(kvm, KVM_PIO_BUS, 0xa0, 2, &s->dev_slave);
-	if (ret < 0)
-		goto fail_unreg_2;
+    // 注册主 PIC 设备到 KVM PIO 总线
+    ret = kvm_io_bus_register_dev(kvm, KVM_PIO_BUS, 0x20, 2, &s->dev_master);
+    if (ret < 0)
+        goto fail_unlock;
 
-	ret = kvm_io_bus_register_dev(kvm, KVM_PIO_BUS, 0x4d0, 2, &s->dev_eclr);
-	if (ret < 0)
-		goto fail_unreg_1;
+    // 注册从 PIC 设备到 KVM PIO 总线
+    ret = kvm_io_bus_register_dev(kvm, KVM_PIO_BUS, 0xa0, 2, &s->dev_slave);
+    if (ret < 0)
+        goto fail_unreg_2;
 
-	mutex_unlock(&kvm->slots_lock);
+    // 注册 "eclr" PIC 设备到 KVM PIO 总线
+    ret = kvm_io_bus_register_dev(kvm, KVM_PIO_BUS, 0x4d0, 2, &s->dev_eclr);
+    if (ret < 0)
+        goto fail_unreg_1;
 
-	return s;
+    mutex_unlock(&kvm->slots_lock);
+
+    return s;
 
 fail_unreg_1:
-	kvm_io_bus_unregister_dev(kvm, KVM_PIO_BUS, &s->dev_slave);
+    kvm_io_bus_unregister_dev(kvm, KVM_PIO_BUS, &s->dev_slave);
 
 fail_unreg_2:
-	kvm_io_bus_unregister_dev(kvm, KVM_PIO_BUS, &s->dev_master);
+    kvm_io_bus_unregister_dev(kvm, KVM_PIO_BUS, &s->dev_master);
 
 fail_unlock:
-	mutex_unlock(&kvm->slots_lock);
+    mutex_unlock(&kvm->slots_lock);
 
-	kfree(s);
+    // 失败时释放分配的资源
+    kfree(s);
 
-	return NULL;
+    return NULL;
 }
+
 
 void kvm_destroy_pic(struct kvm_pic *vpic)
 {

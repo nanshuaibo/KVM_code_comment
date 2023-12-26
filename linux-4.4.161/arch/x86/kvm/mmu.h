@@ -56,14 +56,13 @@ void
 reset_shadow_zero_bits_mask(struct kvm_vcpu *vcpu, struct kvm_mmu *context);
 
 /*
- * Return values of handle_mmio_page_fault:
- * RET_MMIO_PF_EMULATE: it is a real mmio page fault, emulate the instruction
- *			directly.
- * RET_MMIO_PF_INVALID: invalid spte is detected then let the real page
- *			fault path update the mmio spte.
- * RET_MMIO_PF_RETRY: let CPU fault again on the address.
- * RET_MMIO_PF_BUG: a bug was detected (and a WARN was printed).
+ * handle_mmio_page_fault 的返回值:
+ * RET_MMIO_PF_EMULATE: 这是一个真实的 MMIO 页错误，直接模拟该指令。
+ * RET_MMIO_PF_INVALID: 检测到无效的 spte，然后让真实的页错误路径更新 MMIO spte。
+ * RET_MMIO_PF_RETRY: 让 CPU 在相同地址上再次产生故障。
+ * RET_MMIO_PF_BUG: 检测到一个错误（并打印了一个 WARN）。
  */
+
 enum {
 	RET_MMIO_PF_EMULATE = 1,
 	RET_MMIO_PF_INVALID = 2,

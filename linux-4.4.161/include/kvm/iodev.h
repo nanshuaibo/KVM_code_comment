@@ -22,23 +22,53 @@ struct kvm_io_device;
 struct kvm_vcpu;
 
 /**
- * kvm_io_device_ops are called under kvm slots_lock.
- * read and write handlers return 0 if the transaction has been handled,
- * or non-zero to have it passed to the next device.
- **/
+ * struct kvm_io_device_ops 定义了一组函数指针，用于处理 I/O 操作。这些函数在 kvm slots_lock 的保护下被调用。
+ *
+ * - 如果读取和写入处理程序返回 0，表示当前设备已处理事务；否则，返回非零值，将事务传递给下一个设备。
+ *
+ * - destructor 是一个函数指针，用于在设备被销毁时进行清理操作。当设备不再需要时，调用此函数来释放资源。
+ */
 struct kvm_io_device_ops {
-	int (*read)(struct kvm_vcpu *vcpu,
-		    struct kvm_io_device *this,
-		    gpa_t addr,
-		    int len,
-		    void *val);
-	int (*write)(struct kvm_vcpu *vcpu,
-		     struct kvm_io_device *this,
-		     gpa_t addr,
-		     int len,
-		     const void *val);
-	void (*destructor)(struct kvm_io_device *this);
+    /**
+     * read 函数指针负责处理 I/O 读取操作。它接受以下参数：
+     *
+     * @param vcpu   指向与 I/O 操作相关联的虚拟 CPU 结构的指针。
+     * @param this   指向表示当前 I/O 设备的 kvm_io_device 结构的指针。
+     * @param addr   虚拟地址，表示 I/O 操作的地址。
+     * @param len    读取的字节数。
+     * @param val    存储读取结果的缓冲区的指针。
+     *
+     * 如果 I/O 操作在当前设备中被处理，函数应返回0；否则，返回非零值，将操作传递给下一个设备。
+     */
+    int (*read)(struct kvm_vcpu *vcpu,
+                struct kvm_io_device *this,
+                gpa_t addr,
+                int len,
+                void *val);
+
+    /**
+     * write 函数指针负责处理 I/O 写入操作。它接受以下参数：
+     *
+     * @param vcpu   指向与 I/O 操作相关联的虚拟 CPU 结构的指针。
+     * @param this   指向表示当前 I/O 设备的 kvm_io_device 结构的指针。
+     * @param addr   虚拟地址，表示 I/O 操作的地址。
+     * @param len    写入的字节数。
+     * @param val    包含写入数据的缓冲区的指针。
+     *
+     * 如果 I/O 操作在当前设备中被处理，函数应返回0；否则，返回非零值，将操作传递给下一个设备。
+     */
+    int (*write)(struct kvm_vcpu *vcpu,
+                 struct kvm_io_device *this,
+                 gpa_t addr,
+                 int len,
+                 const void *val);
+
+    /**
+     * destructor 是一个函数指针，用于在设备被销毁时执行清理操作。当设备不再需要时调用此函数。
+     */
+    void (*destructor)(struct kvm_io_device *this);
 };
+
 
 
 struct kvm_io_device {

@@ -1073,6 +1073,8 @@ static inline bool cpu_has_vmx_posted_intr(void)
 		vmcs_config.pin_based_exec_ctrl & PIN_BASED_POSTED_INTR;
 }
 
+
+//检查当前 CPU 是否支持 VMX（Virtual Machine eXtensions）的 APICv 特性
 static inline bool cpu_has_vmx_apicv(void)
 {
 	return cpu_has_vmx_apic_register_virt() &&
@@ -6342,7 +6344,7 @@ static __init int hardware_setup(void)
 		kvm_tsc_scaling_ratio_frac_bits = 48;
 	}
 
-	if (enable_apicv)
+	if (enable_apicv) //是否支持apicv
 		kvm_x86_ops->update_cr8_intercept = NULL;
 	else {
 		kvm_x86_ops->hwapic_irr_update = NULL;

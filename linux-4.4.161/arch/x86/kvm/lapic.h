@@ -19,27 +19,27 @@ struct kvm_timer {
 };
 
 struct kvm_lapic {
-	unsigned long base_address;
+	unsigned long base_address; //lapic的基地址
 	struct kvm_io_device dev;
-	struct kvm_timer lapic_timer;
-	u32 divide_count;
+	struct kvm_timer lapic_timer; //lapic定时器
+	u32 divide_count; //lapic定时器的分频计数
 	struct kvm_vcpu *vcpu;
 	bool sw_enabled;
-	bool irr_pending;
+	bool irr_pending; //中断请求寄存器是否有挂起的中断请求
 	bool lvt0_in_nmi_mode;
 	/* Number of bits set in ISR. */
-	s16 isr_count;
+	s16 isr_count; // ISR（中断服务寄存器）中被置位的位数
 	/* The highest vector set in ISR; if -1 - invalid, must scan ISR. */
-	int highest_isr_cache;
+	int highest_isr_cache; // ISR 中最高的中断向量，-1 表示无效，需要扫描 ISR
 	/**
 	 * APIC register page.  The layout matches the register layout seen by
 	 * the guest 1:1, because it is accessed by the vmx microcode.
 	 * Note: Only one register, the TPR, is used by the microcode.
 	 */
-	void *regs;
-	gpa_t vapic_addr;
-	struct gfn_to_hva_cache vapic_cache;
-	unsigned long pending_events;
+	void *regs; // APIC 寄存器页，与 guest 中的 APIC 寄存器布局一一对应
+	gpa_t vapic_addr;  // 虚拟化的 APIC 地址
+	struct gfn_to_hva_cache vapic_cache; // 用于加速虚拟 APIC 地址到主机虚拟地址的转换的缓存
+	unsigned long pending_events; // 挂起的事件标志
 	unsigned int sipi_vector;
 };
 int kvm_create_lapic(struct kvm_vcpu *vcpu);

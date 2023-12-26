@@ -73,11 +73,12 @@ int kvm_send_userspace_msi(struct kvm *kvm, struct kvm_msi *msi)
 }
 
 /*
- * Return value:
- *  < 0   Interrupt was ignored (masked or not delivered for other reasons)
- *  = 0   Interrupt was coalesced (previous irq is still pending)
- *  > 0   Number of CPUs interrupt was delivered to
+ * 返回值：
+ *  < 0   中断被忽略（被屏蔽或由于其他原因未传递）
+ *  = 0   中断被合并（先前的中断仍然挂起）
+ *  > 0   中断传递给的 CPU 数量
  */
+
 int kvm_set_irq(struct kvm *kvm, int irq_source_id, u32 irq, int level,
 		bool line_status)
 {
@@ -89,9 +90,12 @@ int kvm_set_irq(struct kvm *kvm, int irq_source_id, u32 irq, int level,
 	/* Not possible to detect if the guest uses the PIC or the
 	 * IOAPIC.  So set the bit in both. The guest will ignore
 	 * writes to the unused one.
-	 */
+     * 无法检测客户端使用的是 PIC 还是 IOAPIC。因此在两者中都设置该位。
+     * 客户端将忽略对未使用的那一方的写入。
+     */
+
 	idx = srcu_read_lock(&kvm->irq_srcu);
-	i = kvm_irq_map_gsi(kvm, irq_set, irq);
+	i = kvm_irq_map_gsi(kvm, irq_set, irq); //获取虚拟机的中断路由表
 	srcu_read_unlock(&kvm->irq_srcu, idx);
 
 	while (i--) {
@@ -135,101 +139,154 @@ void kvm_free_irq_routing(struct kvm *kvm)
 	free_irq_routing_table(rt);
 }
 
+/**
+ * setup_routing_entry - 设置 IRQ 路由表中的一条目
+ * @rt: 指向 kvm_irq_routing_table 结构的指针
+ * @e: 指向 kvm_kernel_irq_routing_entry 结构的指针，用于存储新的路由表条目
+ * @ue: 指向 kvm_irq_routing_entry 结构的指针，包含新条目的信息
+ *
+ * 此函数用于向 IRQ 路由表中添加新的中断条目。该函数会检查是否已经存在相同的 GSI 映射到相同的 IRQChip，
+ * 并且只允许 GSI 与 IRQChip 的一对一映射，以及不允许重复映射同一个 IRQChip。
+ *
+ * 成功返回0，失败返回负错误代码。
+ */
 static int setup_routing_entry(struct kvm_irq_routing_table *rt,
-			       struct kvm_kernel_irq_routing_entry *e,
-			       const struct kvm_irq_routing_entry *ue)
+                               struct kvm_kernel_irq_routing_entry *e,
+                               const struct kvm_irq_routing_entry *ue)
 {
-	int r = -EINVAL;
-	struct kvm_kernel_irq_routing_entry *ei;
+    int r = -EINVAL;
+    struct kvm_kernel_irq_routing_entry *ei;
 
-	/*
-	 * Do not allow GSI to be mapped to the same irqchip more than once.
-	 * Allow only one to one mapping between GSI and non-irqchip routing.
-	 */
-	hlist_for_each_entry(ei, &rt->map[ue->gsi], link)
-		if (ei->type != KVM_IRQ_ROUTING_IRQCHIP ||
-		    ue->type != KVM_IRQ_ROUTING_IRQCHIP ||
-		    ue->u.irqchip.irqchip == ei->irqchip.irqchip)
-			return r;
+    /*
+     * 不允许将 GSI 多次映射到同一个 IRQChip。
+     * 仅允许 GSI 与非 IRQChip 路由之间的一对一映射。
+     */
+    hlist_for_each_entry(ei, &rt->map[ue->gsi], link)
+        if (ei->type != KVM_IRQ_ROUTING_IRQCHIP ||
+            ue->type != KVM_IRQ_ROUTING_IRQCHIP ||
+            ue->u.irqchip.irqchip == ei->irqchip.irqchip)
+            return r;
 
-	e->gsi = ue->gsi;
-	e->type = ue->type;
-	r = kvm_set_routing_entry(e, ue);
-	if (r)
-		goto out;
-	if (e->type == KVM_IRQ_ROUTING_IRQCHIP)
-		rt->chip[e->irqchip.irqchip][e->irqchip.pin] = e->gsi;
+    e->gsi = ue->gsi;
+    e->type = ue->type;
 
-	hlist_add_head(&e->link, &rt->map[e->gsi]);
-	r = 0;
+    // 根据中断类型设置回调函数
+    r = kvm_set_routing_entry(e, ue);
+    if (r)
+        goto out;
+
+    // 如果新的条目类型为 IRQChip，则在芯片数组中保存 GSI 映射关系
+    if (e->type == KVM_IRQ_ROUTING_IRQCHIP)
+        rt->chip[e->irqchip.irqchip][e->irqchip.pin] = e->gsi;
+
+    // 将新的条目添加到 GSI 映射的散列表中
+    hlist_add_head(&e->link, &rt->map[e->gsi]);
+
+    r = 0;
 out:
-	return r;
+    return r;
 }
 
+
+/**
+ * kvm_set_irq_routing - 设置 KVM 实例的 IRQ 路由表
+ * @kvm: 指向 KVM 实例的指针
+ * @ue: 指向 kvm_irq_routing_entry 结构数组的指针
+ * @nr: 数组中的条目数量
+ * @flags: 附加标志（目前未使用）
+ *
+ * 该函数基于提供的 kvm_irq_routing_entry 结构数组设置 KVM 实例的 IRQ 路由表。
+ * 每个条目指定 GSI（全局系统中断）及其路由信息。
+ *
+ * 成功返回0，失败返回负错误代码。
+ */
 int kvm_set_irq_routing(struct kvm *kvm,
-			const struct kvm_irq_routing_entry *ue,
-			unsigned nr,
-			unsigned flags)
+                        const struct kvm_irq_routing_entry *ue,
+                        unsigned nr,
+                        unsigned flags)
 {
-	struct kvm_irq_routing_table *new, *old;
-	u32 i, j, nr_rt_entries = 0;
-	int r;
+    struct kvm_irq_routing_table *new, *old;
+    u32 i, j, nr_rt_entries = 0;
+    int r;
 
-	for (i = 0; i < nr; ++i) {
-		if (ue[i].gsi >= KVM_MAX_IRQ_ROUTES)
-			return -EINVAL;
-		nr_rt_entries = max(nr_rt_entries, ue[i].gsi);
-	}
+    // 在输入数组中验证 GSI 值
+    for (i = 0; i < nr; ++i) {
+        if (ue[i].gsi >= KVM_MAX_IRQ_ROUTES)
+            return -EINVAL;
+        nr_rt_entries = max(nr_rt_entries, ue[i].gsi);
+    }
 
-	nr_rt_entries += 1;
+    nr_rt_entries += 1;
 
-	new = kzalloc(sizeof(*new) + (nr_rt_entries * sizeof(struct hlist_head)),
-		      GFP_KERNEL);
+    // 为新的路由表分配内存
+    new = kzalloc(sizeof(*new) + (nr_rt_entries * sizeof(struct hlist_head)),
+                  GFP_KERNEL);
 
-	if (!new)
-		return -ENOMEM;
+    if (!new)
+        return -ENOMEM;
 
-	new->nr_rt_entries = nr_rt_entries;
-	for (i = 0; i < KVM_NR_IRQCHIPS; i++)
-		for (j = 0; j < KVM_IRQCHIP_NUM_PINS; j++)
-			new->chip[i][j] = -1;
+    new->nr_rt_entries = nr_rt_entries;
 
-	for (i = 0; i < nr; ++i) {
-		struct kvm_kernel_irq_routing_entry *e;
+    // 在新的路由表中初始化芯片数组
+    for (i = 0; i < KVM_NR_IRQCHIPS; i++)
+        for (j = 0; j < KVM_IRQCHIP_NUM_PINS; j++)
+            new->chip[i][j] = -1;
+    }
 
-		r = -ENOMEM;
-		e = kzalloc(sizeof(*e), GFP_KERNEL);
-		if (!e)
-			goto out;
+    // 遍历输入数组，为每个条目创建新的内核 IRQ 路由表条目
+    for (i = 0; i < nr; ++i) {
+        struct kvm_kernel_irq_routing_entry *e;
 
-		r = -EINVAL;
-		if (ue->flags) {
-			kfree(e);
-			goto out;
-		}
-		r = setup_routing_entry(new, e, ue);
-		if (r) {
-			kfree(e);
-			goto out;
-		}
-		++ue;
-	}
+        // 分配新的内核 IRQ 路由表条目
+        r = -ENOMEM;
+        e = kzalloc(sizeof(*e), GFP_KERNEL);
+        if (!e)
+            goto out;
 
-	mutex_lock(&kvm->irq_lock);
-	old = kvm->irq_routing;
-	rcu_assign_pointer(kvm->irq_routing, new);
-	kvm_irq_routing_update(kvm);
-	mutex_unlock(&kvm->irq_lock);
+        r = -EINVAL;
+        // 确保输入条目没有附加标志
+        if (ue->flags) {
+            kfree(e);
+            goto out;
+        }
 
-	kvm_arch_irq_routing_update(kvm);
+        // 设置新的路由表条目
+        r = setup_routing_entry(new, e, ue);
+        if (r) {
+            kfree(e);
+            goto out;
+        }
+        ++ue;
+    }
 
-	synchronize_srcu_expedited(&kvm->irq_srcu);
+    // 使用互斥锁锁住 IRQ
+    mutex_lock(&kvm->irq_lock);
 
-	new = old;
-	r = 0;
+    // 将旧的路由表指针保存在 'old' 变量中
+    old = kvm->irq_routing;
+
+    // 将新的路由表指针指向 KVM 实例
+    rcu_assign_pointer(kvm->irq_routing, new);
+
+    // 更新 KVM 实例的 IRQ
+    kvm_irq_routing_update(kvm);
+
+    // 解锁 IRQ 互斥锁
+    mutex_unlock(&kvm->irq_lock);
+
+    // 更新架构相关的 IRQ 路由
+    kvm_arch_irq_routing_update(kvm);
+
+    // 等待所有的 SRCU 读者完成
+    synchronize_srcu_expedited(&kvm->irq_srcu);
+
+    // 释放旧的路由表
+    new = old;
+    r = 0;
 
 out:
-	free_irq_routing_table(new);
+    // 释放新的路由表（如果有错误）
+    free_irq_routing_table(new);
 
-	return r;
+    return r;
 }

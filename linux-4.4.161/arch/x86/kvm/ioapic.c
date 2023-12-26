@@ -186,18 +186,14 @@ static int ioapic_set_irq(struct kvm_ioapic *ioapic, unsigned int irq,
 		ret = 1;
 		goto out;
 	}
-
 	/*
-	 * Return 0 for coalesced interrupts; for edge-triggered interrupts,
-	 * this only happens if a previous edge has not been delivered due
-	 * do masking.  For level interrupts, the remote_irr field tells
-	 * us if the interrupt is waiting for an EOI.
-	 *
-	 * RTC is special: it is edge-triggered, but userspace likes to know
-	 * if it has been already ack-ed via EOI because coalesced RTC
-	 * interrupts lead to time drift in Windows guests.  So we track
-	 * EOI manually for the RTC interrupt.
-	 */
+	* 对于合并的中断返回0；对于边沿触发的中断，只有在由于屏蔽导致之前的边沿未被传递时才会发生。
+	* 对于电平触发的中断，remote_irr 字段告诉我们中断是否在等待 EOI。
+	*
+	* RTC 是特殊的：它是边沿触发的，但用户空间想知道它是否已通过 EOI 进行了确认，因为合并的 RTC
+	* 中断会导致 Windows 客户机中的时间漂移。因此，我们为 RTC 中断手动追踪 EOI。
+	*/
+
 	if (irq == RTC_GSI && line_status &&
 		rtc_irq_check_coalesced(ioapic)) {
 		ret = 0;
@@ -208,13 +204,14 @@ static int ioapic_set_irq(struct kvm_ioapic *ioapic, unsigned int irq,
 	ioapic->irr |= mask;
 	if (edge)
 		ioapic->irr_delivered &= ~mask;
-	if ((edge && old_irr == ioapic->irr) ||
-	    (!edge && entry.fields.remote_irr)) {
+	if ((edge && old_irr == ioapic->irr /*对于边沿触发的中断，说明上一次的中断没有被处理*/ ) || 
+	    (!edge && entry.fields.remote_irr/*对于水平触发的中断，如果remote_irr还未设置为0，表明虚拟机还在处理该中断，
+		处理完后，虚拟机操作吸引会发送一个eoi信号，表示中断处理完成*/)) {
 		ret = 0;
 		goto out;
 	}
 
-	ret = ioapic_service(ioapic, irq, line_status);
+	ret = ioapic_service(ioapic, irq, line_status); //分发中断
 
 out:
 	trace_kvm_ioapic_set_irq(entry.bits, irq, ret == 0);
@@ -326,8 +323,8 @@ static void ioapic_write_indirect(struct kvm_ioapic *ioapic, u32 val)
 
 static int ioapic_service(struct kvm_ioapic *ioapic, int irq, bool line_status)
 {
-	union kvm_ioapic_redirect_entry *entry = &ioapic->redirtbl[irq];
-	struct kvm_lapic_irq irqe;
+	union kvm_ioapic_redirect_entry *entry = &ioapic->redirtbl[irq]; //获取中断的重定向表项
+	struct kvm_lapic_irq irqe; //大部分内容为重定向表项中复制过去的
 	int ret;
 
 	if (entry->fields.mask)
@@ -348,10 +345,10 @@ static int ioapic_service(struct kvm_ioapic *ioapic, int irq, bool line_status)
 	irqe.shorthand = 0;
 	irqe.msi_redir_hint = false;
 
-	if (irqe.trig_mode == IOAPIC_EDGE_TRIG)
-		ioapic->irr_delivered |= 1 << irq;
+	if (irqe.trig_mode == IOAPIC_EDGE_TRIG) //边沿触发
+		ioapic->irr_delivered |= 1 << irq; 
 
-	if (irq == RTC_GSI && line_status) {
+	if (irq == RTC_GSI && line_status) { //rtc中断
 		/*
 		 * pending_eoi cannot ever become negative (see
 		 * rtc_status_pending_eoi_check_valid) and the caller
@@ -380,7 +377,7 @@ int kvm_ioapic_set_irq(struct kvm_ioapic *ioapic, int irq, int irq_source_id,
 
 	spin_lock(&ioapic->lock);
 	irq_level = __kvm_irq_line_state(&ioapic->irq_states[irq],
-					 irq_source_id, level);
+					 irq_source_id, level); //获取中断引脚的状态
 	ret = ioapic_set_irq(ioapic, irq, irq_level, line_status);
 
 	spin_unlock(&ioapic->lock);
@@ -608,16 +605,22 @@ int kvm_ioapic_init(struct kvm *kvm)
 	struct kvm_ioapic *ioapic;
 	int ret;
 
+	//分配并初始化kvm_ioapic结构
 	ioapic = kzalloc(sizeof(struct kvm_ioapic), GFP_KERNEL);
 	if (!ioapic)
 		return -ENOMEM;
 	spin_lock_init(&ioapic->lock);
 	INIT_DELAYED_WORK(&ioapic->eoi_inject, kvm_ioapic_eoi_inject_work);
+	//将创建的ioapic结构绑定到kvm结构
 	kvm->arch.vioapic = ioapic;
+	//重置ioapic的状态
 	kvm_ioapic_reset(ioapic);
+	//初始化ioapic设备并绑定mmio操作
 	kvm_iodevice_init(&ioapic->dev, &ioapic_mmio_ops);
+	//设置ioapic的kvm指针
 	ioapic->kvm = kvm;
 	mutex_lock(&kvm->slots_lock);
+	//注册ioapic设备到kvm io总线
 	ret = kvm_io_bus_register_dev(kvm, KVM_MMIO_BUS, ioapic->base_address,
 				      IOAPIC_MEM_LENGTH, &ioapic->dev);
 	mutex_unlock(&kvm->slots_lock);
@@ -627,6 +630,7 @@ int kvm_ioapic_init(struct kvm *kvm)
 		return ret;
 	}
 
+	//触发vcpu扫描ioapic请求
 	kvm_vcpu_request_scan_ioapic(kvm);
 	return ret;
 }

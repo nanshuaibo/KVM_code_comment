@@ -76,7 +76,7 @@ struct kvm_pic_state {
 	__u8 elcr_mask;
 };
 
-#define KVM_IOAPIC_NUM_PINS  24
+#define KVM_IOAPIC_NUM_PINS  24 //表示IO APIC的引脚数目 ， pic芯片只使用前8个
 struct kvm_ioapic_state {
 	__u64 base_address;
 	__u32 ioregsel;

@@ -2139,25 +2139,26 @@ EXPORT_SYMBOL_GPL(kvm_vcpu_block);
 
 #ifndef CONFIG_S390
 /*
- * Kick a sleeping VCPU, or a guest VCPU in guest mode, into host kernel mode.
+ * 唤醒一个处于睡眠状态的vcpu的线程，或者将处于guest模式的vcpu切换到主机的内核模式。
  */
 void kvm_vcpu_kick(struct kvm_vcpu *vcpu)
 {
 	int me;
 	int cpu = vcpu->cpu;
-	wait_queue_head_t *wqp;
+	wait_queue_head_t *wqp; //vcpu的等待队列头
 
 	wqp = kvm_arch_vcpu_wq(vcpu);
-	if (waitqueue_active(wqp)) {
-		wake_up_interruptible(wqp);
-		++vcpu->stat.halt_wakeup;
+	if (waitqueue_active(wqp)) { //检查等待队列是否活跃
+		wake_up_interruptible(wqp); //唤醒等待队列上的等待进程
+		++vcpu->stat.halt_wakeup; //增加计数统计
 	}
 
-	me = get_cpu();
+	me = get_cpu(); //获取当前cpu的编号
+	/*如果指定的vCPU不在当前CPU 上执行，并且指定的 CPU 编号有效且在线*/
 	if (cpu != me && (unsigned)cpu < nr_cpu_ids && cpu_online(cpu))
 		if (kvm_arch_vcpu_should_kick(vcpu))
-			smp_send_reschedule(cpu);
-	put_cpu();
+			smp_send_reschedule(cpu); //向指定的cpu发送重新调度请求
+	put_cpu(); //开抢占
 }
 EXPORT_SYMBOL_GPL(kvm_vcpu_kick);
 #endif /* !CONFIG_S390 */

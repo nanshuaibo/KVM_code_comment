@@ -54,7 +54,7 @@ static int kvm_set_ioapic_irq(struct kvm_kernel_irq_routing_entry *e,
 			      struct kvm *kvm, int irq_source_id, int level,
 			      bool line_status)
 {
-	struct kvm_ioapic *ioapic = kvm->arch.vioapic;
+	struct kvm_ioapic *ioapic = kvm->arch.vioapic; //从虚拟机内部获取kvm_ioapic
 
 	if (!ioapic)
 		return -1;
@@ -75,25 +75,32 @@ int kvm_irq_delivery_to_apic(struct kvm *kvm, struct kvm_lapic *src,
 		irq->delivery_mode = APIC_DM_FIXED;
 	}
 
+	//使用预先存在kvm中的kvm_apic_map来查找lapic
 	if (kvm_irq_delivery_to_apic_fast(kvm, src, irq, &r, dest_map))
 		return r;
-
+	
+	/*目的是在虚拟机中选择一个或多个目标 vcpu，
+	 将中断传递给它们。如果是选择最低优先级的 vcpu，则在循环结束后，
+	 lowest 变量将指向具有最低优先级的 vcpu。
+	*/
 	kvm_for_each_vcpu(i, vcpu, kvm) {
-		if (!kvm_apic_present(vcpu))
+		if (!kvm_apic_present(vcpu))  //当前vcpu没有启用lapic
 			continue;
 
 		if (!kvm_apic_match_dest(vcpu, src, irq->shorthand,
-					irq->dest_id, irq->dest_mode))
+					irq->dest_id, irq->dest_mode)) //如果vcpu的lapic匹配了指定的目标
 			continue;
 
-		if (!kvm_lowest_prio_delivery(irq)) {
+		if (!kvm_lowest_prio_delivery(irq)) { //如果不是要求将中断传递给具有最低优先级的处理器
 			if (r < 0)
 				r = 0;
 			r += kvm_apic_set_irq(vcpu, irq, dest_map);
-		} else if (kvm_lapic_enabled(vcpu)) {
+		} else if (kvm_lapic_enabled(vcpu)) { //如果是要求将中断传递给具有最低优先级的处理器，
+		//并且当前 vcpu 的 LAPIC 已启用
 			if (!lowest)
 				lowest = vcpu;
-			else if (kvm_apic_compare_prio(vcpu, lowest) < 0)
+			else if (kvm_apic_compare_prio(vcpu, lowest) < 0) //如果当前 vcpu 的 LAPIC 优先级比
+			// lowest 的 LAPIC 优先级更低
 				lowest = vcpu;
 		}
 	}
@@ -306,16 +313,22 @@ bool kvm_intr_is_single_vcpu(struct kvm *kvm, struct kvm_lapic_irq *irq,
 }
 EXPORT_SYMBOL_GPL(kvm_intr_is_single_vcpu);
 
+// 宏：生成 IOAPIC 类型的中断路由表条目
 #define IOAPIC_ROUTING_ENTRY(irq) \
-	{ .gsi = irq, .type = KVM_IRQ_ROUTING_IRQCHIP,	\
-	  .u.irqchip = { .irqchip = KVM_IRQCHIP_IOAPIC, .pin = (irq) } }
+    { .gsi = irq, .type = KVM_IRQ_ROUTING_IRQCHIP, \
+      .u.irqchip = { .irqchip = KVM_IRQCHIP_IOAPIC, .pin = (irq) } }
+
+// 宏：生成只包含 IOAPIC 类型的中断路由表条目
 #define ROUTING_ENTRY1(irq) IOAPIC_ROUTING_ENTRY(irq)
 
+// 宏：生成 PIC 类型的中断路由表条目
 #define PIC_ROUTING_ENTRY(irq) \
-	{ .gsi = irq, .type = KVM_IRQ_ROUTING_IRQCHIP,	\
-	  .u.irqchip = { .irqchip = SELECT_PIC(irq), .pin = (irq) % 8 } }
+    { .gsi = irq, .type = KVM_IRQ_ROUTING_IRQCHIP, \
+      .u.irqchip = { .irqchip = SELECT_PIC(irq), .pin = (irq) % 8 } }
+
+// 宏：生成同时包含 IOAPIC 和 PIC 类型的两个中断路由表条目
 #define ROUTING_ENTRY2(irq) \
-	IOAPIC_ROUTING_ENTRY(irq), PIC_ROUTING_ENTRY(irq)
+    IOAPIC_ROUTING_ENTRY(irq), PIC_ROUTING_ENTRY(irq)
 
 static const struct kvm_irq_routing_entry default_routing[] = {
 	ROUTING_ENTRY2(0), ROUTING_ENTRY2(1),

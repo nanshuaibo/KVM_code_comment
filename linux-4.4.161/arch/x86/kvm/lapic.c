@@ -365,8 +365,8 @@ static inline void apic_set_irr(int vec, struct kvm_lapic *apic)
 {
 	apic_set_vector(vec, apic->regs + APIC_IRR);
 	/*
-	 * irr_pending must be true if any interrupt is pending; set it after
-	 * APIC_IRR to avoid race with apic_clear_irr
+	 * 如果有任何中断挂起，irr_pending 必须为 true；在设置 APIC_IRR 寄存器之后将其设置为 true，
+	 * 以避免与 apic_clear_irr 的竞争条件。
 	 */
 	apic->irr_pending = true;
 }
@@ -510,7 +510,7 @@ int kvm_apic_set_irq(struct kvm_vcpu *vcpu, struct kvm_lapic_irq *irq,
 	struct kvm_lapic *apic = vcpu->arch.apic;
 
 	return __apic_accept_irq(apic, irq->delivery_mode, irq->vector,
-			irq->level, irq->trig_mode, dest_map);
+			irq->level, irq->trig_mode, dest_map);  //接受中断请求
 }
 
 static int pv_eoi_put_user(struct kvm_vcpu *vcpu, u8 val)
@@ -758,7 +758,7 @@ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 			continue;
 		if (*r < 0)
 			*r = 0;
-		*r += kvm_apic_set_irq(dst[i]->vcpu, irq, dest_map);
+		*r += kvm_apic_set_irq(dst[i]->vcpu, irq, dest_map); //将中断信息传递到LAPIC
 	}
 out:
 	rcu_read_unlock();
@@ -855,13 +855,15 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
 
 		if (apic_test_vector(vector, apic->regs + APIC_TMR) != !!trig_mode) {
 			if (trig_mode)
-				apic_set_vector(vector, apic->regs + APIC_TMR);
+				apic_set_vector(vector, apic->regs + APIC_TMR/*相当于一个bitmap，
+				每个中断向量号都会在这个bitmap中有一位，如果当前中断向量号与对应TMR寄存器中位于中断重定向项中的trigger mode不一致，
+				则需要重新设置*/);
 			else
 				apic_clear_vector(vector, apic->regs + APIC_TMR);
 		}
 
-		if (kvm_x86_ops->deliver_posted_interrupt)
-			kvm_x86_ops->deliver_posted_interrupt(vcpu, vector);
+		if (kvm_x86_ops->deliver_posted_interrupt) //判断如何进行中断注入
+			kvm_x86_ops->deliver_posted_interrupt(vcpu, vector); //通过apicv的方式进行注入
 		else {
 			apic_set_irr(vector, apic);
 
@@ -1834,11 +1836,15 @@ int kvm_apic_has_interrupt(struct kvm_vcpu *vcpu)
 	struct kvm_lapic *apic = vcpu->arch.apic;
 	int highest_irr;
 
-	if (!kvm_vcpu_has_lapic(vcpu) || !apic_enabled(apic))
+	if (!kvm_vcpu_has_lapic(vcpu) || !apic_enabled(apic))  //检查cpu死否具有lapic并且lapic是否启用
 		return -1;
 
 	apic_update_ppr(apic);
-	highest_irr = apic_find_highest_irr(apic);
+	highest_irr = apic_find_highest_irr(apic); //找到lapic中最高优先级的中断请求、、
+
+	/*如果未找到中断请求（highest_irr == -1）或者
+	最高优先级中断请求的优先级小于等于 LAPIC 中的当前处理器优先级寄存器（APIC_PROCPRI），
+	则返回 -1，表示没有中断挂起。*/
 	if ((highest_irr == -1) ||
 	    ((highest_irr & 0xF0) <= kvm_apic_get_reg(apic, APIC_PROCPRI)))
 		return -1;
@@ -1882,12 +1888,13 @@ int kvm_get_apic_interrupt(struct kvm_vcpu *vcpu)
 		return -1;
 
 	/*
-	 * We get here even with APIC virtualization enabled, if doing
-	 * nested virtualization and L1 runs with the "acknowledge interrupt
-	 * on exit" mode.  Then we cannot inject the interrupt via RVI,
-	 * because the process would deliver it through the IDT.
+	 * 
+	 * 这里即使启用了APIC虚拟化，
+	 * 如果进行嵌套虚拟化且L1以“在退出时确认中断”模式运行，
+	 * 我们仍然会到达这里。此时，我们无法通过RVI注入中断，
+	 * 因为该进程将通过IDT传递中断。
+	 *
 	 */
-
 	apic_set_isr(vector, apic);
 	apic_update_ppr(apic);
 	apic_clear_irr(vector, apic);

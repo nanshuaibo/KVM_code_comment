@@ -65,27 +65,27 @@
 #define		APIC_ESR_ILLREGA	0x00080
 #define 	APIC_LVTCMCI	0x2f0
 #define	APIC_ICR	0x300
-#define		APIC_DEST_SELF		0x40000
-#define		APIC_DEST_ALLINC	0x80000
-#define		APIC_DEST_ALLBUT	0xC0000
+#define		APIC_DEST_SELF		0x40000 //目标为自己
+#define		APIC_DEST_ALLINC	0x80000 //目标为所有处理器
+#define		APIC_DEST_ALLBUT	0xC0000 //目标为除自己外的所有处理器
 #define		APIC_ICR_RR_MASK	0x30000
 #define		APIC_ICR_RR_INVALID	0x00000
 #define		APIC_ICR_RR_INPROG	0x10000
 #define		APIC_ICR_RR_VALID	0x20000
-#define		APIC_INT_LEVELTRIG	0x08000
-#define		APIC_INT_ASSERT		0x04000
+#define		APIC_INT_LEVELTRIG	0x08000 //中断触发方式为电平触发
+#define		APIC_INT_ASSERT		0x04000 //中断触发方式为触发时的状态
 #define		APIC_ICR_BUSY		0x01000
-#define		APIC_DEST_LOGICAL	0x00800
-#define		APIC_DEST_PHYSICAL	0x00000
-#define		APIC_DM_FIXED		0x00000
+#define		APIC_DEST_LOGICAL	0x00800 //逻辑寻址方式
+#define		APIC_DEST_PHYSICAL	0x00000 //物理寻址方式
+#define		APIC_DM_FIXED		0x00000 //发送到固定的cpu上
 #define		APIC_DM_FIXED_MASK	0x00700
-#define		APIC_DM_LOWEST		0x00100
-#define		APIC_DM_SMI		0x00200
-#define		APIC_DM_REMRD		0x00300
-#define		APIC_DM_NMI		0x00400
-#define		APIC_DM_INIT		0x00500
-#define		APIC_DM_STARTUP		0x00600
-#define		APIC_DM_EXTINT		0x00700
+#define		APIC_DM_LOWEST		0x00100 //低优先级固定模式，中断将被发送到具有最低中断服务程序优先级的处理器
+#define		APIC_DM_SMI		0x00200 //系统管理中断模式，用于触发 SMI
+#define		APIC_DM_REMRD		0x00300 //远程读取模式，用于允许处理器从远程处理器读取中断向量
+#define		APIC_DM_NMI		0x00400 //非屏蔽中断模式，用于指定中断将被发送为非屏蔽中断
+#define		APIC_DM_INIT		0x00500 //初始化模式，用于触发处理器的初始化
+#define		APIC_DM_STARTUP		0x00600 //启动模式，用于启动处理器
+#define		APIC_DM_EXTINT		0x00700 //外部中断模式，用于表示外部中断
 #define		APIC_VECTOR_MASK	0x000FF
 #define	APIC_ICR2	0x310
 #define		GET_APIC_DEST_FIELD(x)	(((x) >> 24) & 0xFF)

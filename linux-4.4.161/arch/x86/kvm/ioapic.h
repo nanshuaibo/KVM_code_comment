@@ -48,37 +48,40 @@ struct rtc_status {
 union kvm_ioapic_redirect_entry {
 	u64 bits;
 	struct {
-		u8 vector;
-		u8 delivery_mode:3;
-		u8 dest_mode:1;
-		u8 delivery_status:1;
-		u8 polarity:1;
-		u8 remote_irr:1;
-		u8 trig_mode:1;
-		u8 mask:1;
+		u8 vector; //中断向量号
+		u8 delivery_mode:3;//中断发送到cpu的方式
+		u8 dest_mode:1; //用来决定如何解释dest_id，如果其值为0，则用local apic的id与dest_id对比，如果为1，则需要进行更复杂的处理
+		u8 delivery_status:1; //中断状态，0是空闲，1表示被挂起
+		u8 polarity:1; //中断信号的触发极，0表示高电平触发，1表示低电平触发
+		u8 remote_irr:1;//用于水平中断，当lapic接受中断后为1，当接收到eoi之后为0
+		u8 trig_mode:1; //中断的触发模式，1表示水平触发，0表示边沿触发
+		u8 mask:1; //是否屏蔽该中断，1表示屏蔽该中断
 		u8 reserve:7;
 		u8 reserved[4];
-		u8 dest_id;
+		u8 dest_id; //根据dest_mode解释，如果dest_mode为0，则dest_id包含lapic id，如果为1，dest_id可能包含一组cpu
 	} fields;
 };
 
 struct kvm_ioapic {
-	u64 base_address;
-	u32 ioregsel;
-	u32 id;
-	u32 irr;
-	u32 pad;
-	union kvm_ioapic_redirect_entry redirtbl[IOAPIC_NUM_PINS];
-	unsigned long irq_states[IOAPIC_NUM_PINS];
-	struct kvm_io_device dev;
-	struct kvm *kvm;
-	void (*ack_notifier)(void *opaque, int irq);
-	spinlock_t lock;
-	struct rtc_status rtc_status;
-	struct delayed_work eoi_inject;
-	u32 irq_eoi[IOAPIC_NUM_PINS];
-	u32 irr_delivered;
+    u64 base_address;                           // IOAPIC 的mmio基址
+    u32 ioregsel;                               // I/O 寄存器选择
+    u32 id;                                     // IOAPIC 的唯一标识符
+    u32 irr;                                    // 中断请求寄存器（Interrupt Request Register）
+    u32 pad;                                    // 填充字段
+
+    union kvm_ioapic_redirect_entry redirtbl[IOAPIC_NUM_PINS];  // IOAPIC 的重定向表
+    unsigned long irq_states[IOAPIC_NUM_PINS];  // 中断状态数组
+    struct kvm_io_device dev;                   // KVM I/O 设备
+    struct kvm *kvm;                            // 指向 KVM 结构的指针
+
+    void (*ack_notifier)(void *opaque, int irq);  // 中断应答通知函数指针
+    spinlock_t lock;                            // 自旋锁
+    struct rtc_status rtc_status;               // RTC（Real-Time Clock）状态
+    struct delayed_work eoi_inject;            // 延迟工作队列用于 EOI 注入
+    u32 irq_eoi[IOAPIC_NUM_PINS];               // 中断 EOI 记录数组
+    u32 irr_delivered;                          // 已传递的中断请求寄存器状态
 };
+
 
 #ifdef DEBUG
 #define ASSERT(x)  							\

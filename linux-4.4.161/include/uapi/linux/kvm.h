@@ -841,8 +841,8 @@ struct kvm_ppc_smmu_info {
 #ifdef KVM_CAP_IRQ_ROUTING
 
 struct kvm_irq_routing_irqchip {
-	__u32 irqchip;
-	__u32 pin;
+	__u32 irqchip; //中断芯片号
+	__u32 pin; //引脚值
 };
 
 struct kvm_irq_routing_msi {
@@ -866,17 +866,18 @@ struct kvm_irq_routing_s390_adapter {
 #define KVM_IRQ_ROUTING_S390_ADAPTER 3
 
 struct kvm_irq_routing_entry {
-	__u32 gsi;
-	__u32 type;
-	__u32 flags;
-	__u32 pad;
-	union {
-		struct kvm_irq_routing_irqchip irqchip;
-		struct kvm_irq_routing_msi msi;
-		struct kvm_irq_routing_s390_adapter adapter;
-		__u32 pad[8];
-	} u;
+    __u32 gsi; // 该中断在全局范围内的中断号
+    __u32 type; // 中断类型
+    __u32 flags; // 中断标志
+    __u32 pad; // 填充字段
+    union {
+        struct kvm_irq_routing_irqchip irqchip; // IRQChip 中断信息
+        struct kvm_irq_routing_msi msi; // MSI（Message Signaled Interrupt）中断信息
+        struct kvm_irq_routing_s390_adapter adapter; // s390 适配器中断信息
+        __u32 pad[8]; // 预留字段，保持结构体大小一致
+    } u;
 };
+
 
 struct kvm_irq_routing {
 	__u32 nr;

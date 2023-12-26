@@ -161,18 +161,22 @@ struct kvm_io_range {
 #define NR_IOBUS_DEVS 1000
 
 struct kvm_io_bus {
-	int dev_count;
-	int ioeventfd_count;
-	struct kvm_io_range range[];
+	int dev_count; //一个vm上的设备总数
+	int ioeventfd_count; //统计当前的io次数
+	struct kvm_io_range range[]; //一个设备所处的地址范围
 };
 
+/**
+ * 枚举类型 kvm_bus 定义了 KVM 中不同的总线类型。
+ */
 enum kvm_bus {
-	KVM_MMIO_BUS,
-	KVM_PIO_BUS,
-	KVM_VIRTIO_CCW_NOTIFY_BUS,
-	KVM_FAST_MMIO_BUS,
-	KVM_NR_BUSES
+    KVM_MMIO_BUS,                 // 内存映射 I/O 总线
+    KVM_PIO_BUS,                  // 端口 I/O 总线
+    KVM_VIRTIO_CCW_NOTIFY_BUS,    // Virtio CCW 通知总线
+    KVM_FAST_MMIO_BUS,            // 快速内存映射 I/O 总线
+    KVM_NR_BUSES                  // 总线类型数量
 };
+
 
 int kvm_io_bus_write(struct kvm_vcpu *vcpu, enum kvm_bus bus_idx, gpa_t addr,
 		     int len, const void *val);
@@ -284,6 +288,7 @@ struct kvm_vcpu {
 	struct kvm_vcpu_arch arch;
 };
 
+/*cmpxchg原子比较和交换*/
 static inline int kvm_vcpu_exiting_guest_mode(struct kvm_vcpu *vcpu)
 {
 	return cmpxchg(&vcpu->mode, IN_GUEST_MODE, EXITING_GUEST_MODE);
@@ -322,26 +327,27 @@ struct kvm_s390_adapter_int {
 };
 
 struct kvm_kernel_irq_routing_entry {
-	u32 gsi;
-	u32 type;
-	int (*set)(struct kvm_kernel_irq_routing_entry *e,
-		   struct kvm *kvm, int irq_source_id, int level,
-		   bool line_status);
-	union {
-		struct {
-			unsigned irqchip;
-			unsigned pin;
-		} irqchip;
-		struct msi_msg msi;
-		struct kvm_s390_adapter_int adapter;
-	};
-	struct hlist_node link;
+    u32 gsi; // 中断源的全局系统标识符
+    u32 type; // 中断类型
+    int (*set)(struct kvm_kernel_irq_routing_entry *e,
+               struct kvm *kvm, int irq_source_id, int level,
+               bool line_status); // 用于设置中断状态的回调函数
+    union {
+        struct {
+            unsigned irqchip;
+            unsigned pin;
+        } irqchip; // IRQChip 中断信息
+        struct msi_msg msi; // MSI（Message Signaled Interrupt）中断信息
+        struct kvm_s390_adapter_int adapter; // s390 适配器中断信息
+    };
+    struct hlist_node link; // 用于散列的链表节点
 };
 
+
 #ifdef CONFIG_HAVE_KVM_IRQ_ROUTING
-struct kvm_irq_routing_table {
-	int chip[KVM_NR_IRQCHIPS][KVM_IRQCHIP_NUM_PINS];
-	u32 nr_rt_entries;
+struct  kvm_irq_routing_table {
+	int chip[KVM_NR_IRQCHIPS][KVM_IRQCHIP_NUM_PINS]; //第一维表示芯片 ，第二维表示中断芯片对应的引脚
+	u32 nr_rt_entries; //保存的是chip数组的大小
 	/*
 	 * Array indexed by gsi. Each entry contains list of irq chips
 	 * the gsi is connected to.
