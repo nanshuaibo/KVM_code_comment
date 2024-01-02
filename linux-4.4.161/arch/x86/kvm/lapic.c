@@ -387,7 +387,7 @@ static inline int apic_find_highest_irr(struct kvm_lapic *apic)
 	if (!apic->irr_pending)
 		return -1;
 
-	kvm_x86_ops->sync_pir_to_irr(apic->vcpu);
+	kvm_x86_ops->sync_pir_to_irr(apic->vcpu); //将pi_desc中的pir同步到apic_regs中
 	result = apic_search_irr(apic);
 	ASSERT(result == -1 || result >= 16);
 

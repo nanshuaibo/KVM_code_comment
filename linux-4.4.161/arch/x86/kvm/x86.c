@@ -6576,7 +6576,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 		 */
 		if (kvm_x86_ops->hwapic_irr_update)
 			kvm_x86_ops->hwapic_irr_update(vcpu,
-				kvm_lapic_find_highest_irr(vcpu));
+				kvm_lapic_find_highest_irr(vcpu)/*找到当前最大的中断请求向量号（优先级最高的中断）*/);
 	}
 
 	if (kvm_check_request(KVM_REQ_EVENT, vcpu) || req_int_win) {

@@ -467,11 +467,11 @@ struct nested_vmx {
 
 /* Posted-Interrupt Descriptor */
 struct pi_desc {
-	u32 pir[8];     /* Posted interrupt requested */
+	u32 pir[8];     /* Posted interrupt requested 每一位表示一个中断向量号 */
 	union {
 		struct {
 				/* bit 256 - Outstanding Notification */
-			u16	on	: 1,
+			u16	on	: 1, //表示有中断需要处理
 				/* bit 257 - Suppress Notification */
 				sn	: 1,
 				/* bit 271:258 - Reserved */
@@ -4633,19 +4633,23 @@ static inline bool kvm_vcpu_trigger_posted_interrupt(struct kvm_vcpu *vcpu)
 		 *
 		 * Case 1: vcpu keeps in non-root mode. Sending a
 		 * notification event posts the interrupt to vcpu.
-		 *
+		 * vcpu处于非根模式，发送通知事件将 posted interrupt 提交给虚拟 CPU。
 		 * Case 2: vcpu exits to root mode and is still
 		 * runnable. PIR will be synced to vIRR before the
 		 * next vcpu entry. Sending a notification event in
 		 * this case has no effect, as vcpu is not in root
 		 * mode.
-		 *
+		 * 如果vCPU 退出到根模式但仍可运行，PIR 将在下次虚拟 CPU 进入之前同步到 vIRR。
+		 * 在这种情况下，发送通知事件没有效果，因为虚拟 CPU 不在根模式。
 		 * Case 3: vcpu exits to root mode and is blocked.
 		 * vcpu_block() has already synced PIR to vIRR and
 		 * never blocks vcpu if vIRR is not cleared. Therefore,
 		 * a blocked vcpu here does not wait for any requested
 		 * interrupts in PIR, and sending a notification event
 		 * which has no effect is safe here.
+		 * 如果虚拟 CPU 退出到根模式并且被阻塞，vcpu_block() 已经将 PIR 同步到 vIRR，
+		 * 并且如果 vIRR 没有清除，它不会阻塞虚拟 CPU。
+		 * 因此，在这种情况下，发送通知事件是安全的，因为被阻塞的虚拟 CPU 不会等待 PIR 中的任何请求的中断
 		 */
 
 		apic->send_IPI_mask(get_cpu_mask(vcpu->cpu),
@@ -4682,6 +4686,13 @@ static int vmx_deliver_nested_posted_interrupt(struct kvm_vcpu *vcpu,
  * notification to vcpu and hardware will sync PIR to vIRR atomically.
  * 2. If target vcpu isn't running(root mode), kick it to pick up the
  * interrupt from PIR in next vmentry.
+ * 
+ * 通过 posted interrupt 的方式向虚拟 CPU 发送中断。
+ * 如果目标vCPU 正在运行（非根模式），
+ * 向vCPU 发送 posted interrupt 通知，硬件将以原子方式将 PIR 同步到 vIRR。
+ * 如果目标vCPU 没有运行（根模式），
+ * 唤醒它以在下一次虚拟机入口中接收来自 PIR 的中断。
+ * 
  */
 static void vmx_deliver_posted_interrupt(struct kvm_vcpu *vcpu, int vector)
 {
@@ -4692,13 +4703,13 @@ static void vmx_deliver_posted_interrupt(struct kvm_vcpu *vcpu, int vector)
 	if (!r)
 		return;
 
-	if (pi_test_and_set_pir(vector, &vmx->pi_desc))
+	if (pi_test_and_set_pir(vector, &vmx->pi_desc)) //判断当前的中断向量是否存在在posted interrupted descriptor中
 		return;
 
-	r = pi_test_and_set_on(&vmx->pi_desc);
+	r = pi_test_and_set_on(&vmx->pi_desc);//设置pi_desc中的pir的第vector位
 	kvm_make_request(KVM_REQ_EVENT, vcpu);
 	if (r || !kvm_vcpu_trigger_posted_interrupt(vcpu))
-		kvm_vcpu_kick(vcpu);
+		kvm_vcpu_kick(vcpu); //唤醒vcpu
 }
 
 static void vmx_sync_pir_to_irr(struct kvm_vcpu *vcpu)
@@ -8382,18 +8393,29 @@ static void vmx_set_rvi(int vector)
 	if (vector == -1)
 		vector = 0;
 
-	status = vmcs_read16(GUEST_INTR_STATUS);
+	status = vmcs_read16(GUEST_INTR_STATUS); //读取虚拟机当前中断的状态
 	old = (u8)status & 0xff;
 	if ((u8)vector != old) {
 		status &= ~0xff;
 		status |= (u8)vector;
-		vmcs_write16(GUEST_INTR_STATUS, status);
+		vmcs_write16(GUEST_INTR_STATUS, status); //将新的中断信息写入到vmcs中
 	}
 }
+
+/*
+ * 更新 VMX 中硬件 APIC 的中断请求寄存器（IRR）状态。
+ * 如果当前不在客户机模式，则调用 vmx_set_rvi 设置硬件的 IRR 寄存器。
+ * 如果在客户机模式下，根据以下情况处理中断：
+ *   - 如果 max_irr 为 -1，表示无需更新中断状态，直接返回。
+ *   - 如果需要进行 VMexit，由 vmx_check_nested_events 处理。
+ *   - 否则，回退到不使用虚拟中断传递运行 L2 的情况，并检查是否需要重新注入中断。
+ *     - 如果不需要重新注入中断且允许 VMX 中断，则将中断排队到虚拟 CPU，并调用 vmx_inject_irq 注入中断。
+ */
 
 static void vmx_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
 {
 	if (!is_guest_mode(vcpu)) {
+		// 如果不在客户机模式，直接设置硬件的 IRR 寄存器
 		vmx_set_rvi(max_irr);
 		return;
 	}
@@ -8401,23 +8423,19 @@ static void vmx_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
 	if (max_irr == -1)
 		return;
 
-	/*
-	 * In guest mode.  If a vmexit is needed, vmx_check_nested_events
-	 * handles it.
-	 */
+	// 在客户机模式下，如果需要 VMexit，则由 vmx_check_nested_events 处理
 	if (nested_exit_on_intr(vcpu))
 		return;
 
-	/*
-	 * Else, fall back to pre-APICv interrupt injection since L2
-	 * is run without virtual interrupt delivery.
-	 */
+	// 否则，回退到不使用虚拟中断传递运行 L2，并检查是否需要重新注入中断
 	if (!kvm_event_needs_reinjection(vcpu) &&
 	    vmx_interrupt_allowed(vcpu)) {
+		// 如果不需要重新注入中断且允许 VMX 中断，将中断排队并注入
 		kvm_queue_interrupt(vcpu, max_irr, false);
 		vmx_inject_irq(vcpu);
 	}
 }
+
 
 static void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu)
 {
