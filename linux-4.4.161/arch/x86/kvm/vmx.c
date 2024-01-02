@@ -475,8 +475,7 @@ struct pi_desc {
 				/* bit 257 - Suppress Notification */
 				sn	: 1,
 				/* bit 271:258 - Reserved */
-				rsvd_1	: 14;
-				/* bit 279:272 - Notification Vector */
+				rsvd_1	: 14;				/* bit 279:272 - Notification Vector */
 			u8	nv;
 				/* bit 287:280 - Reserved */
 			u8	rsvd_2;
@@ -1029,7 +1028,7 @@ static inline bool cpu_has_vmx_msr_bitmap(void)
 
 static inline bool cpu_has_vmx_tpr_shadow(void)
 {
-	return vmcs_config.cpu_based_exec_ctrl & CPU_BASED_TPR_SHADOW;
+	return vmcs_config.cpu_based_exec_ctrl & CPU_BASED_TPR_SHADOW; //判断vmcs中的VM-exceution control的use TPR shadow位是否置为
 }
 
 static inline bool cpu_need_tpr_shadow(struct kvm_vcpu *vcpu)
@@ -4351,6 +4350,17 @@ static void seg_setup(int seg)
 	vmcs_write32(sf->ar_bytes, ar);
 }
 
+/*
+ * alloc_apic_access_page - 为 KVM 实例分配一个 APIC 访问页面。
+ * @kvm: 指向 KVM 实例结构的指针。
+ *
+ * 此函数为指定的 KVM 实例分配一个用于访问本地高级可编程中断控制器（APIC）的页面。
+ * 它检查是否已经完成了分配，如果是，则跳过分配过程。否则，它为 APIC 访问页面设置内存区域，
+ * 并标记分配过程已完成。分配的页面没有被固定在内存中，以允许内存热插拔。
+ *
+ * 返回值：
+ *   成功返回 0，否则返回负错误代码。
+ */
 static int alloc_apic_access_page(struct kvm *kvm)
 {
 	struct page *page;
@@ -4359,27 +4369,28 @@ static int alloc_apic_access_page(struct kvm *kvm)
 	mutex_lock(&kvm->slots_lock);
 	if (kvm->arch.apic_access_page_done)
 		goto out;
+
 	r = __x86_set_memory_region(kvm, APIC_ACCESS_PAGE_PRIVATE_MEMSLOT,
-				    APIC_DEFAULT_PHYS_BASE, PAGE_SIZE);
+				    APIC_DEFAULT_PHYS_BASE, PAGE_SIZE); //创建虚拟机物理地址到虚拟地址的映射
 	if (r)
 		goto out;
 
-	page = gfn_to_page(kvm, APIC_DEFAULT_PHYS_BASE >> PAGE_SHIFT);
+	page = gfn_to_page(kvm, APIC_DEFAULT_PHYS_BASE >> PAGE_SHIFT); //获取apic-access-page对应的struct page结构
 	if (is_error_page(page)) {
 		r = -EFAULT;
 		goto out;
 	}
 
 	/*
-	 * Do not pin the page in memory, so that memory hot-unplug
-	 * is able to migrate it.
+	 * 不要将页面固定在内存中，以便允许内存热插拔。
 	 */
 	put_page(page);
-	kvm->arch.apic_access_page_done = true;
+	kvm->arch.apic_access_page_done = true; //保证apic_access_page只在第一次创建vcpu的时候调用
 out:
 	mutex_unlock(&kvm->slots_lock);
 	return r;
 }
+
 
 static int alloc_identity_pagetable(struct kvm *kvm)
 {
@@ -5033,7 +5044,7 @@ static void vmx_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 		vmcs_write64(VIRTUAL_APIC_PAGE_ADDR, 0);
 		if (cpu_need_tpr_shadow(vcpu))
 			vmcs_write64(VIRTUAL_APIC_PAGE_ADDR,
-				     __pa(vcpu->arch.apic->regs));
+				     __pa(vcpu->arch.apic->regs));//将apic寄存器页地址存储到vmcs中的VIRTUAL_APIC_PAGE_ADDR
 		vmcs_write32(TPR_THRESHOLD, 0);
 	}
 
@@ -8343,7 +8354,7 @@ static void vmx_set_apic_access_page_addr(struct kvm_vcpu *vcpu, hpa_t hpa)
 	if (!is_guest_mode(vcpu) ||
 	    !nested_cpu_has2(vmx->nested.current_vmcs12,
 			     SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES))
-		vmcs_write64(APIC_ACCESS_ADDR, hpa);
+		vmcs_write64(APIC_ACCESS_ADDR, hpa); //向vmcs中的APIC_ACCESS_ADDR写入apic-access page的物理地址
 }
 
 static void vmx_hwapic_isr_update(struct kvm *kvm, int isr)
@@ -8961,7 +8972,7 @@ static struct kvm_vcpu *vmx_create_vcpu(struct kvm *kvm, unsigned int id)
 	if (err)
 		goto free_vmcs;
 	if (cpu_need_virtualize_apic_accesses(&vmx->vcpu)) {
-		err = alloc_apic_access_page(kvm);
+		err = alloc_apic_access_page(kvm); //分配apic access page
 		if (err)
 			goto free_vmcs;
 	}

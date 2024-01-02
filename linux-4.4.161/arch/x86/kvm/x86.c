@@ -6423,27 +6423,44 @@ static void kvm_vcpu_flush_tlb(struct kvm_vcpu *vcpu)
 	kvm_x86_ops->tlb_flush(vcpu);
 }
 
+/*
+ * kvm_vcpu_reload_apic_access_page - 重新加载 APIC 访问页面的函数
+ * @vcpu: 指向 KVM 虚拟中央处理单元（VCPU）结构的指针。
+ *
+ * 此函数用于重新加载虚拟 CPU 的 APIC 访问页面。如果本地 APIC 在内核中，
+ * 并且 KVM 实现了设置 APIC 访问页面地址的操作，那么此函数会获取访问页面
+ * 的物理地址，并调用相应的 KVM 操作进行设置。
+ *
+ * 注意：该函数不会固定 apic 访问页面在内存中，MMU 通知机制会在页面迁移或交换时
+ * 再次调用此函数。
+ */
 void kvm_vcpu_reload_apic_access_page(struct kvm_vcpu *vcpu)
 {
 	struct page *page = NULL;
 
+	// 如果本地 APIC 不在内核中，直接返回
 	if (!lapic_in_kernel(vcpu))
 		return;
 
+	// 如果 KVM 实现了设置 apic access page地址的操作
 	if (!kvm_x86_ops->set_apic_access_page_addr)
 		return;
 
+	// 获取 APIC 访问页面的 struct page 结构
 	page = gfn_to_page(vcpu->kvm, APIC_DEFAULT_PHYS_BASE >> PAGE_SHIFT);
 	if (is_error_page(page))
 		return;
+
+	// 调用 KVM 操作设置 APIC 访问页面地址
 	kvm_x86_ops->set_apic_access_page_addr(vcpu, page_to_phys(page));
 
 	/*
-	 * Do not pin apic access page in memory, the MMU notifier
-	 * will call us again if it is migrated or swapped out.
+	 * 不要将 apic 访问页面固定在内存中，MMU 通知机制
+	 * 会在页面迁移或交换时再次调用我们。
 	 */
 	put_page(page);
 }
+
 EXPORT_SYMBOL_GPL(kvm_vcpu_reload_apic_access_page);
 
 void kvm_arch_mmu_notifier_invalidate_page(struct kvm *kvm,
@@ -6458,10 +6475,10 @@ void kvm_arch_mmu_notifier_invalidate_page(struct kvm *kvm,
 }
 
 /*
- * Returns 1 to let vcpu_run() continue the guest execution loop without
- * exiting to the userspace.  Otherwise, the value will be returned to the
- * userspace.
+ * 返回1以使 vcpu_run() 继续执行客户机循环，而不是退出到用户空间。
+ * 否则，该值将返回给用户空间。
  */
+
 static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 {
 	int r;
@@ -6532,8 +6549,8 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 		}
 		if (kvm_check_request(KVM_REQ_SCAN_IOAPIC, vcpu))
 			vcpu_scan_ioapic(vcpu);
-		if (kvm_check_request(KVM_REQ_APIC_PAGE_RELOAD, vcpu))
-			kvm_vcpu_reload_apic_access_page(vcpu);
+		if (kvm_check_request(KVM_REQ_APIC_PAGE_RELOAD, vcpu)) 
+			kvm_vcpu_reload_apic_access_page(vcpu); //处理apic page请求
 		if (kvm_check_request(KVM_REQ_HV_CRASH, vcpu)) {
 			vcpu->run->exit_reason = KVM_EXIT_SYSTEM_EVENT;
 			vcpu->run->system_event.type = KVM_SYSTEM_EVENT_CRASH;
@@ -7803,6 +7820,19 @@ void kvm_arch_sync_events(struct kvm *kvm)
 	kvm_free_pit(kvm);
 }
 
+/*
+ * __x86_set_memory_region - 设置内存区域的函数，用于x86体系结构
+ * @kvm: 指向 KVM 实例结构的指针。
+ * @id: 内存槽的ID。
+ * @gpa: 内存槽对应的全局物理地址。
+ * @size: 内存区域的大小。
+ *
+ * 此函数用于设置给定 KVM 实例中的内存区域。它会创建一个内存槽，并映射该内存槽的虚拟地址到物理地址。
+ * 如果size为0，则释放相应的内存槽，并解除映射。
+ *
+ * 返回值：
+ *   成功返回0，否则返回负错误代码。
+ */
 int __x86_set_memory_region(struct kvm *kvm, int id, gpa_t gpa, u32 size)
 {
 	int i, r;
@@ -7810,7 +7840,7 @@ int __x86_set_memory_region(struct kvm *kvm, int id, gpa_t gpa, u32 size)
 	struct kvm_memslots *slots = kvm_memslots(kvm);
 	struct kvm_memory_slot *slot, old;
 
-	/* Called with kvm->slots_lock held.  */
+	/* 在持有 kvm->slots_lock 的情况下调用。  */
 	if (WARN_ON(id >= KVM_MEM_SLOTS_NUM))
 		return -EINVAL;
 
@@ -7820,11 +7850,10 @@ int __x86_set_memory_region(struct kvm *kvm, int id, gpa_t gpa, u32 size)
 			return -EEXIST;
 
 		/*
-		 * MAP_SHARED to prevent internal slot pages from being moved
-		 * by fork()/COW.
+		 * MAP_SHARED 防止内部槽页被 fork()/COW 移动。
 		 */
 		hva = vm_mmap(NULL, 0, size, PROT_READ | PROT_WRITE,
-			      MAP_SHARED | MAP_ANONYMOUS, 0);
+			      MAP_SHARED | MAP_ANONYMOUS, 0); //分配匿名虚拟内存
 		if (IS_ERR((void *)hva))
 			return PTR_ERR((void *)hva);
 	} else {

@@ -112,37 +112,41 @@ static inline bool is_error_page(struct page *page)
 
 /*
  * vcpu->requests bit members
+ *
+ * 定义 KVM 请求类型的宏，用于指定不同的 KVM 请求。
  */
-#define KVM_REQ_TLB_FLUSH          0
-#define KVM_REQ_MIGRATE_TIMER      1
-#define KVM_REQ_REPORT_TPR_ACCESS  2
-#define KVM_REQ_MMU_RELOAD         3
-#define KVM_REQ_TRIPLE_FAULT       4
-#define KVM_REQ_PENDING_TIMER      5
-#define KVM_REQ_UNHALT             6
-#define KVM_REQ_MMU_SYNC           7
-#define KVM_REQ_CLOCK_UPDATE       8
-#define KVM_REQ_KICK               9
-#define KVM_REQ_DEACTIVATE_FPU    10
-#define KVM_REQ_EVENT             11
-#define KVM_REQ_APF_HALT          12
-#define KVM_REQ_STEAL_UPDATE      13
-#define KVM_REQ_NMI               14
-#define KVM_REQ_PMU               15
-#define KVM_REQ_PMI               16
-#define KVM_REQ_WATCHDOG          17
-#define KVM_REQ_MASTERCLOCK_UPDATE 18
-#define KVM_REQ_MCLOCK_INPROGRESS 19
-#define KVM_REQ_EPR_EXIT          20
-#define KVM_REQ_SCAN_IOAPIC       21
-#define KVM_REQ_GLOBAL_CLOCK_UPDATE 22
-#define KVM_REQ_ENABLE_IBS        23
-#define KVM_REQ_DISABLE_IBS       24
-#define KVM_REQ_APIC_PAGE_RELOAD  25
-#define KVM_REQ_SMI               26
-#define KVM_REQ_HV_CRASH          27
-#define KVM_REQ_IOAPIC_EOI_EXIT   28
-#define KVM_REQ_HV_RESET          29
+
+#define KVM_REQ_TLB_FLUSH          0    // 请求 TLB 刷新
+#define KVM_REQ_MIGRATE_TIMER      1    // 请求迁移定时器
+#define KVM_REQ_REPORT_TPR_ACCESS  2    // 请求报告 TPR 访问
+#define KVM_REQ_MMU_RELOAD         3    // 请求 MMU 重新加载
+#define KVM_REQ_TRIPLE_FAULT       4    // 请求三次故障
+#define KVM_REQ_PENDING_TIMER      5    // 请求挂起定时器
+#define KVM_REQ_UNHALT             6    // 请求解除挂起
+#define KVM_REQ_MMU_SYNC           7    // 请求 MMU 同步
+#define KVM_REQ_CLOCK_UPDATE       8    // 请求时钟更新
+#define KVM_REQ_KICK               9    // 请求唤醒
+#define KVM_REQ_DEACTIVATE_FPU    10   // 请求禁用 FPU
+#define KVM_REQ_EVENT             11   // 请求事件
+#define KVM_REQ_APF_HALT          12   // 请求 APF 挂起
+#define KVM_REQ_STEAL_UPDATE      13   // 请求更新窃取
+#define KVM_REQ_NMI               14   // 请求 NMI
+#define KVM_REQ_PMU               15   // 请求 PMU
+#define KVM_REQ_PMI               16   // 请求 PMI
+#define KVM_REQ_WATCHDOG          17   // 请求看门狗
+#define KVM_REQ_MASTERCLOCK_UPDATE 18  // 请求主时钟更新
+#define KVM_REQ_MCLOCK_INPROGRESS 19  // 请求主时钟进行中
+#define KVM_REQ_EPR_EXIT          20  // 请求 EPR 退出
+#define KVM_REQ_SCAN_IOAPIC       21  // 请求扫描 IOAPIC
+#define KVM_REQ_GLOBAL_CLOCK_UPDATE 22 // 请求全局时钟更新
+#define KVM_REQ_ENABLE_IBS        23  // 请求启用 IBS
+#define KVM_REQ_DISABLE_IBS       24  // 请求禁用 IBS
+#define KVM_REQ_APIC_PAGE_RELOAD  25  // 请求 APIC 页重新加载
+#define KVM_REQ_SMI               26  // 请求 SMI
+#define KVM_REQ_HV_CRASH          27  // 请求 HV 崩溃
+#define KVM_REQ_IOAPIC_EOI_EXIT   28  // 请求 IOAPIC EOI 退出
+#define KVM_REQ_HV_RESET          29  // 请求 HV 复位
+
 
 #define KVM_USERSPACE_IRQ_SOURCE_ID		0
 #define KVM_IRQFD_RESAMPLE_IRQ_SOURCE_ID	1
