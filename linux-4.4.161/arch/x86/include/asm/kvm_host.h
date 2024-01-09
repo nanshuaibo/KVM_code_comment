@@ -492,8 +492,8 @@ struct kvm_vcpu_arch {
 
 	struct {
 		u64 msr_val;
-		u64 last_steal;
-		u64 accum_steal;
+		u64 last_steal; 
+		u64 accum_steal; //累计的steal_time
 		struct gfn_to_hva_cache stime;
 		struct kvm_steal_time steal;
 	} st;
@@ -717,32 +717,33 @@ struct kvm_vm_stat {
 };
 
 struct kvm_vcpu_stat {
-	u32 pf_fixed;
-	u32 pf_guest;
-	u32 tlb_flush;
-	u32 invlpg;
+    u32 pf_fixed;                // 页面错误（Page Fault）固定计数
+    u32 pf_guest;                // 页面错误（Page Fault）在客户机中的计数
+    u32 tlb_flush;               // TLB 刷新计数
+    u32 invlpg;                  // INVLPG 指令计数
 
-	u32 exits;
-	u32 io_exits;
-	u32 mmio_exits;
-	u32 signal_exits;
-	u32 irq_window_exits;
-	u32 nmi_window_exits;
-	u32 halt_exits;
-	u32 halt_successful_poll;
-	u32 halt_attempted_poll;
-	u32 halt_wakeup;
-	u32 request_irq_exits;
-	u32 irq_exits;
-	u32 host_state_reload;
-	u32 efer_reload;
-	u32 fpu_reload;
-	u32 insn_emulation;
-	u32 insn_emulation_fail;
-	u32 hypercalls;
-	u32 irq_injections;
-	u32 nmi_injections;
+    u32 exits;                   // 所有退出的计数
+    u32 io_exits;                // I/O 退出计数
+    u32 mmio_exits;              // 内存映射 I/O 退出计数
+    u32 signal_exits;            // 信号退出计数
+    u32 irq_window_exits;       // IRQ 窗口退出计数
+    u32 nmi_window_exits;       // NMI 窗口退出计数
+    u32 halt_exits;              // HLT 指令退出计数
+    u32 halt_successful_poll;    // 成功的 HLT 指令轮询计数
+    u32 halt_attempted_poll;     // 尝试的 HLT 指令轮询计数
+    u32 halt_wakeup;             // HLT 唤醒计数
+    u32 request_irq_exits;       // 请求 IRQ 退出计数
+    u32 irq_exits;               // IRQ 退出计数
+    u32 host_state_reload;       // 主机状态重载计数
+    u32 efer_reload;             // EFER 寄存器重载计数
+    u32 fpu_reload;              // 浮点单元（FPU）重载计数
+    u32 insn_emulation;          // 指令模拟计数
+    u32 insn_emulation_fail;     // 指令模拟失败计数
+    u32 hypercalls;              // 超级调用计数
+    u32 irq_injections;          // IRQ 注入计数
+    u32 nmi_injections;          // NMI 注入计数
 };
+
 
 struct x86_instruction_info;
 

@@ -5457,27 +5457,36 @@ static int handle_triple_fault(struct kvm_vcpu *vcpu)
 	return 0;
 }
 
+/**
+ * @brief 处理虚拟机的I/O操作
+ *
+ * @param vcpu 指向虚拟CPU（vCPU）结构的指针
+ * @return 返回处理结果，通常是一个整数
+ */
 static int handle_io(struct kvm_vcpu *vcpu)
 {
-	unsigned long exit_qualification;
-	int size, in, string;
-	unsigned port;
+    // 从VMCS中获取退出信息（exit qualification）
+    unsigned long exit_qualification = vmx_get_exit_qual(vcpu);
 
-	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
-	string = (exit_qualification & 16) != 0;
-	in = (exit_qualification & 8) != 0;
+    // 检查是否是字符串I/O操作
+    int string = (exit_qualification & 16) != 0;
 
-	++vcpu->stat.io_exits;
+    // 增加I/O退出统计
+    ++vcpu->stat.io_exits;
 
-	if (string || in)
-		return emulate_instruction(vcpu, 0) == EMULATE_DONE;
+    // 如果是字符串I/O操作，调用指令模拟函数并返回
+    if (string)
+        return kvm_emulate_instruction(vcpu, 0);
 
-	port = exit_qualification >> 16;
-	size = (exit_qualification & 7) + 1;
-	skip_emulated_instruction(vcpu);
+    // 提取I/O端口号、数据大小和操作类型
+    unsigned port = exit_qualification >> 16;
+    int size = (exit_qualification & 7) + 1;
+    int in = (exit_qualification & 8) != 0;
 
-	return kvm_fast_pio_out(vcpu, size, port);
+    // 调用快速I/O函数处理I/O操作
+    return kvm_fast_pio(vcpu, size, port, in);
 }
+
 
 static void
 vmx_patch_hypercall(struct kvm_vcpu *vcpu, unsigned char *hypercall)
@@ -7613,11 +7622,11 @@ static int handle_pcommit(struct kvm_vcpu *vcpu)
  * 否则，它们会设置 kvm_run 参数以指示用户空间需要执行什么操作，并返回 0。
  */
 static int (*const kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
-	[EXIT_REASON_EXCEPTION_NMI]           = handle_exception,
-	[EXIT_REASON_EXTERNAL_INTERRUPT]      = handle_external_interrupt,
+	[EXIT_REASON_EXCEPTION_NMI]           = handle_exception, //异常
+	[EXIT_REASON_EXTERNAL_INTERRUPT]      = handle_external_interrupt, /外部中断
 	[EXIT_REASON_TRIPLE_FAULT]            = handle_triple_fault,
 	[EXIT_REASON_NMI_WINDOW]	      = handle_nmi_window,
-	[EXIT_REASON_IO_INSTRUCTION]          = handle_io,
+	[EXIT_REASON_IO_INSTRUCTION]          = handle_io, //io指令操作
 	[EXIT_REASON_CR_ACCESS]               = handle_cr,
 	[EXIT_REASON_DR_ACCESS]               = handle_dr,
 	[EXIT_REASON_CPUID]                   = handle_cpuid,
@@ -7646,8 +7655,8 @@ static int (*const kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
 	[EXIT_REASON_XSETBV]                  = handle_xsetbv,
 	[EXIT_REASON_TASK_SWITCH]             = handle_task_switch,
 	[EXIT_REASON_MCE_DURING_VMENTRY]      = handle_machine_check,
-	[EXIT_REASON_EPT_VIOLATION]	      = handle_ept_violation,
-	[EXIT_REASON_EPT_MISCONFIG]           = handle_ept_misconfig,
+	[EXIT_REASON_EPT_VIOLATION]	      = handle_ept_violation, //ept缺页异常
+	[EXIT_REASON_EPT_MISCONFIG]           = handle_ept_misconfig, 
 	[EXIT_REASON_PAUSE_INSTRUCTION]       = handle_pause,
 	[EXIT_REASON_MWAIT_INSTRUCTION]	      = handle_mwait,
 	[EXIT_REASON_MONITOR_TRAP_FLAG]       = handle_monitor_trap,

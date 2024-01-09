@@ -6602,12 +6602,12 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 		}
 	}
 
-	r = kvm_mmu_reload(vcpu);
+	r = kvm_mmu_reload(vcpu); //guest的mmu初始化，为内存虚拟化做准备
 	if (unlikely(r)) {
 		goto cancel_injection;
 	}
 
-	preempt_disable();
+	preempt_disable(); //内核抢占关闭
 
 	kvm_x86_ops->prepare_guest_switch(vcpu);
 	if (vcpu->fpu_active)
