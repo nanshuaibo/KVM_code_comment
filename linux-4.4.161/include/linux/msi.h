@@ -4,11 +4,21 @@
 #include <linux/kobject.h>
 #include <linux/list.h>
 
+/*
+ * struct msi_msg - MSI（Message Signaled Interrupt）消息结构
+ * @address_lo: MSI 消息地址的低 32 位
+ * @address_hi: MSI 消息地址的高 32 位
+ * @data: MSI 消息数据的低 16 位
+ *
+ * MSI 允许设备发送消息而不是产生中断信号，这是一种替代传统中断机制的方法。
+ * MSI 消息由地址和数据组成，该结构定义了 MSI 消息的格式。
+ */
 struct msi_msg {
-	u32	address_lo;	/* low 32 bits of msi message address */
-	u32	address_hi;	/* high 32 bits of msi message address */
-	u32	data;		/* 16 bits of msi message data */
+	u32 address_lo;  /* MSI 消息地址的低 32 位 */
+	u32 address_hi;  /* MSI 消息地址的高 32 位 */
+	u32 data;        /* MSI 消息数据的低 16 位 */
 };
+
 
 extern int pci_msi_ignore_mask;
 /* Helper functions */

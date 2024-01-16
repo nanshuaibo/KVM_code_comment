@@ -114,8 +114,10 @@ int kvm_irq_delivery_to_apic(struct kvm *kvm, struct kvm_lapic *src,
 void kvm_set_msi_irq(struct kvm_kernel_irq_routing_entry *e,
 		     struct kvm_lapic_irq *irq)
 {
+	//tracepoint kvm_msi_set_irq
 	trace_kvm_msi_set_irq(e->msi.address_lo, e->msi.data);
 
+	// 解析 MSI 中断信息并填充到 kvm_lapic_irq 结构体中
 	irq->dest_id = (e->msi.address_lo &
 			MSI_ADDR_DEST_ID_MASK) >> MSI_ADDR_DEST_ID_SHIFT;
 	irq->vector = (e->msi.data &
@@ -140,7 +142,7 @@ int kvm_set_msi(struct kvm_kernel_irq_routing_entry *e,
 
 	kvm_set_msi_irq(e, &irq);
 
-	return kvm_irq_delivery_to_apic(kvm, NULL, &irq, NULL);
+	return kvm_irq_delivery_to_apic(kvm, NULL, &irq, NULL); //分发中断
 }
 
 
@@ -239,10 +241,19 @@ void kvm_fire_mask_notifiers(struct kvm *kvm, unsigned irqchip, unsigned pin,
 	srcu_read_unlock(&kvm->irq_srcu, idx);
 }
 
+/*
+ * kvm_set_routing_entry - 设置虚拟中断路由表条目
+ * @e: 虚拟中断路由表的内核数据结构
+ * @ue: 用户空间传递的虚拟中断路由表条目
+ *
+ * 此函数根据用户空间传递的虚拟中断路由表条目（ue），填充内核中的虚拟中断路由表数据结构（e）。
+ * 返回 0 表示成功，否则返回相应的错误码（例如 EINVAL）。
+ */
 int kvm_set_routing_entry(struct kvm_kernel_irq_routing_entry *e,
 			  const struct kvm_irq_routing_entry *ue)
 {
-	int r = -EINVAL;
+	int r = -EINVAL;  // 默认返回值为错误（EINVAL）
+
 	int delta;
 	unsigned max_pin;
 
@@ -251,40 +262,41 @@ int kvm_set_routing_entry(struct kvm_kernel_irq_routing_entry *e,
 		delta = 0;
 		switch (ue->u.irqchip.irqchip) {
 		case KVM_IRQCHIP_PIC_MASTER:
-			e->set = kvm_set_pic_irq;
-			max_pin = PIC_NUM_PINS;
+			e->set = kvm_set_pic_irq;  // 设置处理 PIC 中断的回调函数
+			max_pin = PIC_NUM_PINS;    // PIC 的最大引脚数
 			break;
 		case KVM_IRQCHIP_PIC_SLAVE:
-			e->set = kvm_set_pic_irq;
-			max_pin = PIC_NUM_PINS;
-			delta = 8;
+			e->set = kvm_set_pic_irq;  // 设置处理 PIC 中断的回调函数
+			max_pin = PIC_NUM_PINS;    // PIC 的最大引脚数
+			delta = 8;                 // 增加偏移以处理从 PIC
 			break;
 		case KVM_IRQCHIP_IOAPIC:
-			max_pin = KVM_IOAPIC_NUM_PINS;
-			e->set = kvm_set_ioapic_irq;
+			max_pin = KVM_IOAPIC_NUM_PINS;  // IOAPIC 的最大引脚数
+			e->set = kvm_set_ioapic_irq;    // 设置处理 IOAPIC 中断的回调函数
 			break;
 		default:
-			goto out;
+			goto out;  // 未知的 irqchip 类型，跳到错误处理部分
 		}
 		e->irqchip.irqchip = ue->u.irqchip.irqchip;
-		e->irqchip.pin = ue->u.irqchip.pin + delta;
+		e->irqchip.pin = ue->u.irqchip.pin + delta;  // 设置 IRQCHIP 中断引脚
 		if (e->irqchip.pin >= max_pin)
-			goto out;
+			goto out;  // 超出引脚范围，跳到错误处理部分
 		break;
 	case KVM_IRQ_ROUTING_MSI:
-		e->set = kvm_set_msi;
-		e->msi.address_lo = ue->u.msi.address_lo;
-		e->msi.address_hi = ue->u.msi.address_hi;
-		e->msi.data = ue->u.msi.data;
+		e->set = kvm_set_msi;              // 设置处理 MSI 中断的回调函数
+		e->msi.address_lo = ue->u.msi.address_lo; //msi地址的第32位
+		e->msi.address_hi = ue->u.msi.address_hi;//msi地址的高32位
+		e->msi.data = ue->u.msi.data;  //  msi数据的低16位 
 		break;
 	default:
-		goto out;
+		goto out;  // 未知的中断类型，跳到错误处理部分
 	}
 
-	r = 0;
+	r = 0;  // 操作成功，将返回值设置为 0
 out:
-	return r;
+	return r;  // 返回操作结果
 }
+
 
 bool kvm_intr_is_single_vcpu(struct kvm *kvm, struct kvm_lapic_irq *irq,
 			     struct kvm_vcpu **dest_vcpu)

@@ -179,7 +179,7 @@ static void pic_update_irq(struct kvm_pic *s)
 {
     int irq2, irq;
 
-    // 获取第二个虚拟PIC中的中断
+    // 获取从虚拟PIC中的中断
     irq2 = pic_get_irq(&s->pics[1]);
     if (irq2 >= 0) {
         /*
