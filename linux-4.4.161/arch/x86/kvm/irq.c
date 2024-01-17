@@ -28,9 +28,9 @@
 #include "x86.h"
 
 /*
- * check if there are pending timer events
- * to be processed.
+ * 检查是否有待处理的定时器事件。
  */
+
 int kvm_cpu_has_pending_timer(struct kvm_vcpu *vcpu)
 {
 	return apic_has_pending_timer(vcpu);
@@ -38,7 +38,7 @@ int kvm_cpu_has_pending_timer(struct kvm_vcpu *vcpu)
 EXPORT_SYMBOL(kvm_cpu_has_pending_timer);
 
 /*
- * check if there is a pending userspace external interrupt
+ * 检查是否有待处理的用户空间外部中断。
  */
 static int pending_userspace_extint(struct kvm_vcpu *v)
 {
@@ -46,9 +46,9 @@ static int pending_userspace_extint(struct kvm_vcpu *v)
 }
 
 /*
- * check if there is pending interrupt from
- * non-APIC source without intack.
+ * 检查是否存在来自非APIC源的未经中断确认的挂起中断。
  */
+
 static int kvm_cpu_has_extint(struct kvm_vcpu *v)
 {
 	u8 accept = kvm_apic_accept_pic_intr(v);
@@ -63,11 +63,12 @@ static int kvm_cpu_has_extint(struct kvm_vcpu *v)
 }
 
 /*
- * check if there is injectable interrupt:
- * when virtual interrupt delivery enabled,
- * interrupt from apic will handled by hardware,
- * we don't need to check it here.
+ * 检查是否存在可注入的中断：
+ * 当启用虚拟中断传递时，
+ * 来自APIC的中断将由硬件处理，
+ * 我们不需要在这里进行检查。
  */
+
 int kvm_cpu_has_injectable_intr(struct kvm_vcpu *v)
 {
 	if (!lapic_in_kernel(v))
@@ -83,9 +84,9 @@ int kvm_cpu_has_injectable_intr(struct kvm_vcpu *v)
 }
 
 /*
- * check if there is pending interrupt without
- * intack.
+ * 检查是否存在未经中断确认的挂起中断。
  */
+
 int kvm_cpu_has_interrupt(struct kvm_vcpu *v)
 {
 	if (!lapic_in_kernel(v))
@@ -99,9 +100,9 @@ int kvm_cpu_has_interrupt(struct kvm_vcpu *v)
 EXPORT_SYMBOL_GPL(kvm_cpu_has_interrupt);
 
 /*
- * Read pending interrupt(from non-APIC source)
- * vector and intack.
+ * 读取挂起中断（来自非APIC源）的向量并进行中断确认。
  */
+
 static int kvm_cpu_get_extint(struct kvm_vcpu *v)
 {
 	if (kvm_cpu_has_extint(v)) {
@@ -117,8 +118,9 @@ static int kvm_cpu_get_extint(struct kvm_vcpu *v)
 }
 
 /*
- * Read pending interrupt vector and intack.
+ * 读取挂起中断的向量并进行中断确认。
  */
+
 int kvm_cpu_get_interrupt(struct kvm_vcpu *v)
 {
 	int vector;

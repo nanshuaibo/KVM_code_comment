@@ -1836,7 +1836,7 @@ int kvm_apic_has_interrupt(struct kvm_vcpu *vcpu)
 	struct kvm_lapic *apic = vcpu->arch.apic;
 	int highest_irr;
 
-	if (!kvm_vcpu_has_lapic(vcpu) || !apic_enabled(apic))  //检查cpu死否具有lapic并且lapic是否启用
+	if (!kvm_vcpu_has_lapic(vcpu) || !apic_enabled(apic))  //检查cpu是否具有lapic并且lapic是否启用
 		return -1;
 
 	apic_update_ppr(apic);

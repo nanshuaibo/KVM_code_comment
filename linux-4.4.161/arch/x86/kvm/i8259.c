@@ -144,33 +144,54 @@ static inline int get_priority(struct kvm_kpic_state *s, int mask)
 }
 
 /*
- * return the pic wanted interrupt. return -1 if none
+ * 函数: pic_get_irq
+ * ---------------------
+ * 返回需要处理的中断。
+ *
+ * 参数:
+ *   - struct kvm_kpic_state *s: 指向KVM中断控制器状态的指针。
+ *
+ * 返回值:
+ *   - int: 应该处理的中断号。如果没有挂起的中断，则返回-1。
+ *
+ * 描述:
+ *   此函数计算并返回应由中断控制器处理的最高优先级挂起中断。
+ *   它考虑了未被中断屏蔽寄存器（IMR）屏蔽的中断请求（IRR）。
+ *   优先级由get_priority函数确定，并根据中断控制器的当前状态和配置进行调整。
+ *
+ *   如果没有挂起的中断，则函数返回-1。否则，它返回应该处理的中断号。
  */
 static int pic_get_irq(struct kvm_kpic_state *s)
 {
-	int mask, cur_priority, priority;
+    int mask, cur_priority, priority;
 
-	mask = s->irr & ~s->imr;
-	priority = get_priority(s, mask);
-	if (priority == 8)
-		return -1;
-	/*
-	 * compute current priority. If special fully nested mode on the
-	 * master, the IRQ coming from the slave is not taken into account
-	 * for the priority computation.
-	 */
-	mask = s->isr;
-	if (s->special_fully_nested_mode && s == &s->pics_state->pics[0])
-		mask &= ~(1 << 2);
-	cur_priority = get_priority(s, mask);
-	if (priority < cur_priority)
-		/*
-		 * higher priority found: an irq should be generated
-		 */
-		return (priority + s->priority_add) & 7;
-	else
-		return -1;
+    // 计算未被中断屏蔽寄存器屏蔽的挂起中断请求。
+    mask = s->irr & ~s->imr;
+
+    // 确定挂起中断的优先级。
+    priority = get_priority(s, mask);
+
+    // 如果没有挂起的中断，返回-1。
+    if (priority == 8)
+        return -1;
+
+    /*
+     * 计算当前优先级。如果在主中断控制器上启用了特殊完全嵌套模式，
+     * 则从从属中断控制器传递的中断不计入优先级计算。
+     */
+    mask = s->isr;
+    if (s->special_fully_nested_mode && s == &s->pics_state->pics[0])
+        mask &= ~(1 << 2);
+    cur_priority = get_priority(s, mask);
+    if (priority < cur_priority)
+        /*
+         * 找到更高优先级：应生成中断。
+         */
+        return (priority + s->priority_add) & 7;
+    else
+        return -1;
 }
+
 
 /*
  * 如果需要，将中断传递给CPU。必须在每次活动中断可能发生变化时调用。
@@ -588,16 +609,31 @@ static int picdev_eclr_read(struct kvm_vcpu *vcpu, struct kvm_io_device *dev,
 }
 
 /*
- * callback when PIC0 irq status changed
+ * 函数: pic_irq_request
+ * ---------------------
+ * 当主PIC中断状态变化时的回调函数。
+ *
+ * 参数:
+ *   - struct kvm *kvm: 指向KVM主结构的指针。
+ *   - int level: 中断输出的状态（高电平或低电平）。
+ *
+ * 描述:
+ *   此函数用作主PIC中断状态变化时的回调。它更新KVM中主PIC的状态，
+ *   并在需要唤醒时设置相应标志。如果中断输出状态改变，该状态将
+ *   被更新为新的状态。
  */
 static void pic_irq_request(struct kvm *kvm, int level)
 {
-	struct kvm_pic *s = pic_irqchip(kvm);
+    struct kvm_pic *s = pic_irqchip(kvm);
 
-	if (!s->output)
-		s->wakeup_needed = true;
-	s->output = level;
+    // 如果输出为空，表示主PIC的中断状态发生变化，需要唤醒。
+    if (!s->output)
+        s->wakeup_needed = true;
+
+    // 更新主PIC的中断输出状态。
+    s->output = level;
 }
+
 
 static const struct kvm_io_device_ops picdev_master_ops = {
 	.read     = picdev_master_read,
