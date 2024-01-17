@@ -2157,7 +2157,7 @@ void kvm_vcpu_kick(struct kvm_vcpu *vcpu)
 	/*如果指定的vCPU不在当前CPU 上执行，并且指定的 CPU 编号有效且在线*/
 	if (cpu != me && (unsigned)cpu < nr_cpu_ids && cpu_online(cpu))
 		if (kvm_arch_vcpu_should_kick(vcpu))
-			smp_send_reschedule(cpu); //向指定的cpu发送重新调度请求
+			smp_send_reschedule(cpu); //向指定的cpu发送重新调度的ipi
 	put_cpu(); //开抢占
 }
 EXPORT_SYMBOL_GPL(kvm_vcpu_kick);

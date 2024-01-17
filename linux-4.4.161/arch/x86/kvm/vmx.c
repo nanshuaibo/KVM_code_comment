@@ -5128,32 +5128,64 @@ static void enable_nmi_window(struct kvm_vcpu *vcpu)
 	vmcs_write32(CPU_BASED_VM_EXEC_CONTROL, cpu_based_vm_exec_control);
 }
 
+/*
+ * 函数: vmx_inject_irq
+ * ---------------------
+ * 注入中断到VMX（Virtual Machine Extensions）虚拟 CPU 中。
+ *
+ * 参数:
+ *   - struct kvm_vcpu *vcpu: 指向KVM虚拟CPU的指针。
+ *
+ * 描述:
+ *   此函数用于在VMX虚拟CPU中注入中断。根据中断的来源，它执行不同的操作。
+ *   如果虚拟CPU处于实模式（vm86_active），则调用kvm_inject_realmode_interrupt
+ *   函数注入实模式中断，如果注入失败，则发出KVM_REQ_TRIPLE_FAULT请求。否则，
+ *   在VMCS（Virtual Machine Control Structure）区域中写入中断信息。
+ *   中断信息包括中断向量号和中断类型（硬中断或软中断）。增加软中断时，还将
+ *   VMCS区域的VM_ENTRY_INSTRUCTION_LEN字段设置为事件退出指令的长度。
+ *
+ *   注意：VMX是Intel虚拟化技术的一部分，VMCS用于存储和控制虚拟机执行的状态。
+ */
 static void vmx_inject_irq(struct kvm_vcpu *vcpu)
 {
-	struct vcpu_vmx *vmx = to_vmx(vcpu);
-	uint32_t intr;
-	int irq = vcpu->arch.interrupt.nr; //获取中断向量号
+    struct vcpu_vmx *vmx = to_vmx(vcpu);
+    uint32_t intr;
+    int irq = vcpu->arch.interrupt.nr; // 获取中断向量号
 
-	trace_kvm_inj_virq(irq);
+    trace_kvm_inj_virq(irq);
 
-	++vcpu->stat.irq_injections;
-	if (vmx->rmode.vm86_active) {
-		int inc_eip = 0;
-		if (vcpu->arch.interrupt.soft)
-			inc_eip = vcpu->arch.event_exit_inst_len;
-		if (kvm_inject_realmode_interrupt(vcpu, irq, inc_eip) != EMULATE_DONE)
-			kvm_make_request(KVM_REQ_TRIPLE_FAULT, vcpu);
-		return;
-	}
-	intr = irq | INTR_INFO_VALID_MASK;
-	if (vcpu->arch.interrupt.soft) {
-		intr |= INTR_TYPE_SOFT_INTR;
-		vmcs_write32(VM_ENTRY_INSTRUCTION_LEN,
-			     vmx->vcpu.arch.event_exit_inst_len);
-	} else
-		intr |= INTR_TYPE_EXT_INTR;
-	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, intr); //将中断向量号写入vmcs区域
+    ++vcpu->stat.irq_injections;
+
+    // 如果虚拟CPU处于实模式（vm86_active）
+    if (vmx->rmode.vm86_active) {
+        int inc_eip = 0;
+
+        // 如果是软中断，增加EIP
+        if (vcpu->arch.interrupt.soft)
+            inc_eip = vcpu->arch.event_exit_inst_len;
+
+        // 尝试注入实模式中断，如果失败则发出KVM_REQ_TRIPLE_FAULT请求
+        if (kvm_inject_realmode_interrupt(vcpu, irq, inc_eip) != EMULATE_DONE)
+            kvm_make_request(KVM_REQ_TRIPLE_FAULT, vcpu);
+
+        return;
+    }
+
+    // 构造中断信息
+    intr = irq | INTR_INFO_VALID_MASK;
+
+    // 如果是软中断
+    if (vcpu->arch.interrupt.soft) {
+        intr |= INTR_TYPE_SOFT_INTR;
+        vmcs_write32(VM_ENTRY_INSTRUCTION_LEN, vmx->vcpu.arch.event_exit_inst_len);
+    } else {
+        intr |= INTR_TYPE_EXT_INTR;
+    }
+
+    // 将中断信息写入VMCS区域
+    vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, intr);
 }
+
 
 static void vmx_inject_nmi(struct kvm_vcpu *vcpu)
 {

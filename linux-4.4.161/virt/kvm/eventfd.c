@@ -474,18 +474,45 @@ void kvm_notify_acked_gsi(struct kvm *kvm, int gsi)
 			kian->irq_acked(kian);
 }
 
+/*
+ * 函数: kvm_notify_acked_irq
+ * ---------------------
+ * 通知已确认（acked）的中断。
+ *
+ * 参数:
+ *   - struct kvm *kvm: 指向 KVM 主结构的指针。
+ *   - unsigned irqchip: 中断控制器的标识。
+ *   - unsigned pin: 中断引脚的标识。
+ *
+ * 描述:
+ *   此函数用于通知已确认的中断。它记录追踪信息，通过 SRCU 机制获取读锁以确保
+ *   与其他可能的写操作不冲突。然后，通过给定的 irqchip 和 pin，将它们映射为
+ *   全局系统中断（GSI）。如果映射成功，则调用 kvm_notify_acked_gsi 函数通知
+ *   已确认的 GSI。最后，释放之前获取的 SRCU 读锁。
+ */
 void kvm_notify_acked_irq(struct kvm *kvm, unsigned irqchip, unsigned pin)
 {
-	int gsi, idx;
+    int gsi, idx;
 
-	trace_kvm_ack_irq(irqchip, pin);
+    // 记录确认中断的追踪信息
+    trace_kvm_ack_irq(irqchip, pin);
 
-	idx = srcu_read_lock(&kvm->irq_srcu);
-	gsi = kvm_irq_map_chip_pin(kvm, irqchip, pin);
-	if (gsi != -1)
-		kvm_notify_acked_gsi(kvm, gsi);
-	srcu_read_unlock(&kvm->irq_srcu, idx);
+    // 获取 SRCU 读锁
+    idx = srcu_read_lock(&kvm->irq_srcu);
+
+    // 通过 irqchip 和 pin 将其映射为 GSI
+    gsi = kvm_irq_map_chip_pin(kvm, irqchip, pin);
+
+    // 检查是否成功映射为 GSI
+    if (gsi != -1) {
+        // 通知已确认的 GSI
+        kvm_notify_acked_gsi(kvm, gsi);
+    }
+
+    // 释放 SRCU 读锁
+    srcu_read_unlock(&kvm->irq_srcu, idx);
 }
+
 
 void kvm_register_irq_ack_notifier(struct kvm *kvm,
 				   struct kvm_irq_ack_notifier *kian)

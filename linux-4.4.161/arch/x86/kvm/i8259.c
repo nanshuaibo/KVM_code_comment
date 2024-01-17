@@ -80,14 +80,13 @@ static void pic_unlock(struct kvm_pic *s)
 static void pic_clear_isr(struct kvm_kpic_state *s, int irq)
 {
 	s->isr &= ~(1 << irq);
-	if (s != &s->pics_state->pics[0])
+	if (s != &s->pics_state->pics[0]) //从pic
 		irq += 8;
-	/*
-	 * We are dropping lock while calling ack notifiers since ack
-	 * notifier callbacks for assigned devices call into PIC recursively.
-	 * Other interrupt may be delivered to PIC while lock is dropped but
-	 * it should be safe since PIC state is already updated at this stage.
-	 */
+/*
+ * 我们在调用确认通知器（ack notifiers）时释放锁，因为分配设备的确认通知器回调会递归调用到PIC。
+ * 在释放锁的同时，可能有其他中断被传递到PIC，但这是安全的，因为在此阶段PIC状态已经被更新。
+ */
+
 	pic_unlock(s->pics_state);
 	kvm_notify_acked_irq(s->pics_state->kvm, SELECT_PIC(irq), irq);
 	pic_lock(s->pics_state);
@@ -129,19 +128,40 @@ static inline int pic_set_irq1(struct kvm_kpic_state *s, int irq, int level)
 
 
 /*
- * return the highest priority found in mask (highest = smallest
- * number). Return 8 if no irq
+ * 函数: get_priority
+ * ---------------------
+ * 从中断掩码中获取最高优先级的中断。
+ *
+ * 参数:
+ *   - struct kvm_kpic_state *s: 指向 KVM PIC 状态的指针。
+ *   - int mask: 中断掩码，表示待处理的中断请求。
+ *
+ * 返回值:
+ *   - int: 最高优先级的中断号。如果没有中断请求，返回 8。
+ *
+ * 描述:
+ *   此函数用于从给定的中断掩码中获取最高优先级的中断号。优先级通过掩码中
+ *   最小的位数来确定。如果掩码为0，表示没有中断请求，返回8表示没有中断。
+ *   函数通过迭代检查掩码中的位，找到第一个被置位的位，即表示最高优先级的
+ *   中断。返回此中断号，其中优先级为 0 到 7。
  */
 static inline int get_priority(struct kvm_kpic_state *s, int mask)
 {
-	int priority;
-	if (mask == 0)
-		return 8;
-	priority = 0;
-	while ((mask & (1 << ((priority + s->priority_add) & 7))) == 0)
-		priority++;
-	return priority;
+    int priority;
+
+    // 如果中断掩码为0，表示没有中断请求，返回8表示没有中断
+    if (mask == 0)
+        return 8;
+
+    priority = 0;
+
+    // 迭代检查掩码中的位，找到第一个被置位的位，即表示最高优先级的中断
+    while ((mask & (1 << ((priority + s->priority_add) & 7))) == 0)
+        priority++;
+
+    return priority;
 }
+
 
 /*
  * 函数: pic_get_irq
@@ -165,7 +185,11 @@ static int pic_get_irq(struct kvm_kpic_state *s)
 {
     int mask, cur_priority, priority;
 
-    // 计算未被中断屏蔽寄存器屏蔽的挂起中断请求。
+    // 过滤掉被屏蔽的中断请求
+	/*
+	IRR（Interrupt Request Register）
+	IMR（Interrupt Mask Register）
+	*/
     mask = s->irr & ~s->imr;
 
     // 确定挂起中断的优先级。
@@ -254,61 +278,111 @@ void kvm_pic_clear_all(struct kvm_pic *s, int irq_source_id)
 }
 
 /*
- * acknowledge interrupt 'irq'
+ * 函数: pic_intack
+ * ---------------------
+ * PIC（Programmable Interrupt Controller）中断确认处理函数。
+ *
+ * 参数:
+ *   - struct kvm_kpic_state *s: 指向KVM PIC状态的指针。
+ *   - int irq: 中断号。
+ *
+ * 描述:
+ *   此函数用于处理PIC的中断确认。根据中断的类型和PIC的配置，更新相应的状态。
+ *   首先，设置中断服务寄存器（ISR）中相应的中断位。如果中断是电平触发的，
+ *   则不清除中断请求寄存器（IRR）中的中断位。如果开启了自动EOI（End of Interrupt），
+ *   则根据配置清除ISR中的中断位。如果启用了旋转优先级，调整优先级添加值，并在
+ *   自动EOI模式下清除ISR中的中断位。
  */
 static inline void pic_intack(struct kvm_kpic_state *s, int irq)
 {
-	s->isr |= 1 << irq;
-	/*
-	 * We don't clear a level sensitive interrupt here
-	 */
-	if (!(s->elcr & (1 << irq)))
-		s->irr &= ~(1 << irq);
+    s->isr |= 1 << irq;
 
-	if (s->auto_eoi) {
-		if (s->rotate_on_auto_eoi)
-			s->priority_add = (irq + 1) & 7;
-		pic_clear_isr(s, irq);
-	}
+    /*
+     * 不清除电平触发的中断
+     */
+    if (!(s->elcr & (1 << irq)))
+        s->irr &= ~(1 << irq);
 
+    // 如果开启了自动EOI
+    if (s->auto_eoi) {
+        // 如果启用了旋转优先级，调整优先级添加值
+        if (s->rotate_on_auto_eoi)
+            s->priority_add = (irq + 1) & 7;
+
+        // 在自动EOI模式下清除ISR中的中断位
+        pic_clear_isr(s, irq);
+    }
 }
 
+
+/*
+ * 函数: kvm_pic_read_irq
+ * ---------------------
+ * 从KVM的PIC中读取挂起的中断，并进行中断确认。
+ *
+ * 参数:
+ *   - struct kvm *kvm: 指向KVM主结构的指针。
+ *
+ * 返回值:
+ *   - int: 中断号。
+ *
+ * 描述:
+ *   此函数用于从KVM的PIC中读取挂起的中断，并进行中断确认。首先获取PIC的输出状态，
+ *   然后通过pic_get_irq函数获取挂起的中断号，并调用pic_intack函数进行中断确认。
+ *   如果中断是IRQ2（级联中断），则继续获取从PIC（slave controller）的中断。
+ *   如果存在从PIC中断，则同样进行中断确认。如果没有主PIC中断，则返回7号中断，表示虚假中断。
+ *   最后，更新PIC的中断状态，解锁PIC。
+ */
 int kvm_pic_read_irq(struct kvm *kvm)
 {
-	int irq, irq2, intno;
-	struct kvm_pic *s = pic_irqchip(kvm);
+    int irq, irq2, intno;
+    struct kvm_pic *s = pic_irqchip(kvm);
 
-	s->output = 0;
+    s->output = 0;
 
-	pic_lock(s);
-	irq = pic_get_irq(&s->pics[0]);
-	if (irq >= 0) {
-		pic_intack(&s->pics[0], irq);
-		if (irq == 2) {
-			irq2 = pic_get_irq(&s->pics[1]);
-			if (irq2 >= 0)
-				pic_intack(&s->pics[1], irq2);
-			else
-				/*
-				 * spurious IRQ on slave controller
-				 */
-				irq2 = 7;
-			intno = s->pics[1].irq_base + irq2;
-			irq = irq2 + 8;
-		} else
-			intno = s->pics[0].irq_base + irq;
-	} else {
-		/*
-		 * spurious IRQ on host controller
-		 */
-		irq = 7;
-		intno = s->pics[0].irq_base + irq;
-	}
-	pic_update_irq(s);
-	pic_unlock(s);
+    pic_lock(s);
 
-	return intno;
+    // 获取主PIC中的挂起中断
+    irq = pic_get_irq(&s->pics[0]);
+    if (irq >= 0) {
+        pic_intack(&s->pics[0], irq);
+
+        // 如果是IRQ2（级联中断）
+        if (irq == 2) {
+            // 获取从PIC中的挂起中断
+            irq2 = pic_get_irq(&s->pics[1]);
+            if (irq2 >= 0)
+                pic_intack(&s->pics[1], irq2);
+            else
+                /*
+                 * 从PIC控制器上的虚假IRQ
+                 */
+                irq2 = 7;
+
+            // 计算实际中断号
+            intno = s->pics[1].irq_base + irq2;
+            irq = irq2 + 8;
+        } else {
+            // 计算实际中断号
+            intno = s->pics[0].irq_base + irq;
+        }
+    } else {
+        /*
+         * 在主控制器上的虚假IRQ
+         */
+        irq = 7;
+        intno = s->pics[0].irq_base + irq;
+    }
+
+    // 更新PIC中断状态
+    pic_update_irq(s);
+
+    // 解锁PIC
+    pic_unlock(s);
+
+    return intno;
 }
+
 
 void kvm_pic_reset(struct kvm_kpic_state *s)
 {

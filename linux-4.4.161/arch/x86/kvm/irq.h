@@ -32,8 +32,19 @@
 #include "lapic.h"
 
 #define PIC_NUM_PINS 16
+
+/*
+ * 宏: SELECT_PIC
+ * ---------------------
+ * 根据给定的中断号（irq），确定该中断号所属的 PIC（可编程中断控制器）。
+ * 在典型的 x86 架构中，有两个 PIC，一个是主 PIC（Master），另一个是从 PIC（Slave），
+ * 它们通过级联连接在一起。中断号 0 到 7 归属于主 PIC，中断号 8 到 15 归属于从 PIC。
+ * 此宏返回 KVM_IRQCHIP_PIC_MASTER 表示中断号属于主 PIC，返回 KVM_IRQCHIP_PIC_SLAVE
+ * 表示中断号属于从 PIC。
+ */
 #define SELECT_PIC(irq) \
-	((irq) < 8 ? KVM_IRQCHIP_PIC_MASTER : KVM_IRQCHIP_PIC_SLAVE)
+    ((irq) < 8 ? KVM_IRQCHIP_PIC_MASTER : KVM_IRQCHIP_PIC_SLAVE)
+
 
 struct kvm;
 struct kvm_vcpu;
@@ -50,7 +61,7 @@ struct kvm_kpic_state {
     u8 special_mask;                /* 特殊屏蔽标志（special mask flag） */
     u8 init_state;                  /* 初始化状态（init state） */
     u8 auto_eoi;                    /* 自动 EOI（End Of Interrupt）标志 */
-    u8 rotate_on_auto_eoi;          /* 自动 EOI 时是否轮转（rotate on auto EOI） */
+    u8 rotate_on_auto_eoi;          /* 自动 EOI 时是否轮转优先级（rotate on auto EOI） */
     u8 special_fully_nested_mode;   /* 特殊完全嵌套模式标志 */
     u8 init4;                       /* 如果是 4 字节的初始化，则为真 */
     u8 elcr;                        /* PIIX（Intel 8259A兼容芯片）边沿/触发选择 */
@@ -66,7 +77,7 @@ struct kvm_pic {
     unsigned pending_acks;          // 未决待确认的中断计数
     struct kvm *kvm;                // 指向 KVM 实例的指针
     struct kvm_kpic_state pics[2];  // 表示主 PIC 和从 PIC 状态的数组
-    int output;                     // 来自主 PIC 的中断
+    int output;                     // 来自主 PIC 的中断待处理标识
     struct kvm_io_device dev_master; // 主 PIC 的 I/O 设备
     struct kvm_io_device dev_slave;  // 从 PIC 的 I/O 设备
     struct kvm_io_device dev_eclr;   // "eclr"（假设这是某个特定设备）PIC 的 I/O 设备
