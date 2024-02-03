@@ -8238,31 +8238,31 @@ static void dump_vmcs(void)
 }
 
 /*
- * The guest has exited.  See if we can fix it or if we need userspace
- * assistance.
+ * 客户机已退出。查看是否可以修复，或者是否需要用户空间的帮助。
  */
+
 static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
-	u32 exit_reason = vmx->exit_reason;
-	u32 vectoring_info = vmx->idt_vectoring_info;
+	u32 exit_reason = vmx->exit_reason;             // 读取退出原因
+	u32 vectoring_info = vmx->idt_vectoring_info;   // 读取IDT向量信息
 
-	trace_kvm_exit(exit_reason, vcpu, KVM_ISA_VMX);
+	trace_kvm_exit(exit_reason, vcpu, KVM_ISA_VMX); // 跟踪 KVM 退出
 
 	/*
-	 * Flush logged GPAs PML buffer, this will make dirty_bitmap more
-	 * updated. Another good is, in kvm_vm_ioctl_get_dirty_log, before
-	 * querying dirty_bitmap, we only need to kick all vcpus out of guest
-	 * mode as if vcpus is in root mode, the PML buffer must has been
-	 * flushed already.
+	 * 刷新已记录的 GPA 的 PML 缓冲区，这将使 dirty_bitmap 更加更新。
+	 * 另一个好处是，在 kvm_vm_ioctl_get_dirty_log 中，在查询 dirty_bitmap 之前，
+	 * 我们只需要将所有 vcpu 从 guest 模式踢出，因为如果 vcpu 处于 root 模式，
+	 * 则 PML 缓冲区必定已经被刷新了。
 	 */
 	if (enable_pml)
 		vmx_flush_pml_buffer(vcpu);
 
-	/* If guest state is invalid, start emulating */
+	/* 如果客户机状态无效，则开始模拟 */
 	if (vmx->emulation_required)
 		return handle_invalid_guest_state(vcpu);
 
+	/* 如果处于客户模式且已处理嵌套 VMX 退出，则执行嵌套 VMX 退出处理 */
 	if (is_guest_mode(vcpu) && nested_vmx_exit_handled(vcpu)) {
 		nested_vmx_vmexit(vcpu, exit_reason,
 				  vmcs_read32(VM_EXIT_INTR_INFO),
@@ -8270,6 +8270,7 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 		return 1;
 	}
 
+	/* 如果 VMX_EXIT_REASONS_FAILED_VMENTRY 标志被设置，则处理失败的 VMENTRY */
 	if (exit_reason & VMX_EXIT_REASONS_FAILED_VMENTRY) {
 		dump_vmcs();
 		vcpu->run->exit_reason = KVM_EXIT_FAIL_ENTRY;
@@ -8278,6 +8279,7 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 		return 0;
 	}
 
+	/* 如果 vmx->fail 标志不为零，则处理失败 */
 	if (unlikely(vmx->fail)) {
 		vcpu->run->exit_reason = KVM_EXIT_FAIL_ENTRY;
 		vcpu->run->fail_entry.hardware_entry_failure_reason
@@ -8286,11 +8288,10 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 	}
 
 	/*
-	 * Note:
-	 * Do not try to fix EXIT_REASON_EPT_MISCONFIG if it caused by
-	 * delivery event since it indicates guest is accessing MMIO.
-	 * The vm-exit can be triggered again after return to guest that
-	 * will cause infinite loop.
+	 * 注意：
+	 * 如果退出原因是由传递事件引起的，则不要尝试修复 EXIT_REASON_EPT_MISCONFIG，
+	 * 因为这表明客户正在访问 MMIO。如果返回到 guest 后，可能会再次触发 vm-exit，
+	 * 从而导致无限循环。
 	 */
 	if ((vectoring_info & VECTORING_INFO_VALID_MASK) &&
 			(exit_reason != EXIT_REASON_EXCEPTION_NMI &&
@@ -8305,6 +8306,10 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 		return 0;
 	}
 
+	/*
+	 * 如果 CPU 不支持虚拟 NMIs 并且 vmx->soft_vnmi_blocked 标志被设置，
+	 * 则检查是否超时，如果超时则解除阻塞。
+	 */
 	if (unlikely(!cpu_has_virtual_nmis() && vmx->soft_vnmi_blocked &&
 	    !(is_guest_mode(vcpu) && nested_cpu_has_virtual_nmis(
 					get_vmcs12(vcpu))))) {
@@ -8313,10 +8318,8 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 		} else if (vmx->vnmi_blocked_time > 1000000000LL &&
 			   vcpu->arch.nmi_pending) {
 			/*
-			 * This CPU don't support us in finding the end of an
-			 * NMI-blocked window if the guest runs with IRQs
-			 * disabled. So we pull the trigger after 1 s of
-			 * futile waiting, but inform the user about this.
+			 * 如果这个 CPU 不支持在客户运行时找到 NMI 阻塞窗口的结束，
+			 * 则在 1 秒的徒劳等待后触发，但通知用户此事。
 			 */
 			printk(KERN_WARNING "%s: Breaking out of NMI-blocked "
 			       "state on VCPU %d after 1 s timeout\n",
@@ -8325,6 +8328,11 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 		}
 	}
 
+	/*
+	 * 如果退出原因小于 kvm_vmx_max_exit_handlers 并且 kvm_vmx_exit_handlers[exit_reason] 不为空，
+	 * 则调用相应的退出处理函数。
+	 * 否则，打印警告并将异常队列中的异常向量设置为 UD_VECTOR。
+	 */
 	if (exit_reason < kvm_vmx_max_exit_handlers
 	    && kvm_vmx_exit_handlers[exit_reason])
 		return kvm_vmx_exit_handlers[exit_reason](vcpu);
@@ -8334,6 +8342,7 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 		return 1;
 	}
 }
+
 
 static void update_cr8_intercept(struct kvm_vcpu *vcpu, int tpr, int irr)
 {
@@ -8708,72 +8717,74 @@ static void atomic_switch_perf_msrs(struct vcpu_vmx *vmx)
 }
 
 static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
+static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	unsigned long debugctlmsr, cr4;
 
-	/* Record the guest's net vcpu time for enforced NMI injections. */
+	/* 如果不支持虚拟 NMIs 并且 soft_vnmi_blocked 标志被设置，则记录客户机的净 vcpu 时间 */
 	if (unlikely(!cpu_has_virtual_nmis() && vmx->soft_vnmi_blocked))
 		vmx->entry_time = ktime_get();
 
-	/* Don't enter VMX if guest state is invalid, let the exit handler
-	   start emulation until we arrive back to a valid state */
+	/* 如果客户机状态无效，则不进入 VMX，让退出处理程序开始模拟，直到回到有效状态 */
 	if (vmx->emulation_required)
 		return;
 
+	/* 如果 ple_window_dirty 标志被设置，则刷新 PLE 窗口 */
 	if (vmx->ple_window_dirty) {
 		vmx->ple_window_dirty = false;
 		vmcs_write32(PLE_WINDOW, vmx->ple_window);
 	}
 
+	/* 如果需要同步影子 VMCS，则进行同步 */
 	if (vmx->nested.sync_shadow_vmcs) {
 		copy_vmcs12_to_shadow(vmx);
 		vmx->nested.sync_shadow_vmcs = false;
 	}
 
+	/* 如果寄存器被标记为脏，则更新 VMCS 中的相应寄存器值 */
 	if (test_bit(VCPU_REGS_RSP, (unsigned long *)&vcpu->arch.regs_dirty))
 		vmcs_writel(GUEST_RSP, vcpu->arch.regs[VCPU_REGS_RSP]);
 	if (test_bit(VCPU_REGS_RIP, (unsigned long *)&vcpu->arch.regs_dirty))
 		vmcs_writel(GUEST_RIP, vcpu->arch.regs[VCPU_REGS_RIP]);
 
+	/* 更新 CR4 寄存器的值 */
 	cr4 = cr4_read_shadow();
 	if (unlikely(cr4 != vmx->host_state.vmcs_host_cr4)) {
 		vmcs_writel(HOST_CR4, cr4);
 		vmx->host_state.vmcs_host_cr4 = cr4;
 	}
 
-	/* When single-stepping over STI and MOV SS, we must clear the
-	 * corresponding interruptibility bits in the guest state. Otherwise
-	 * vmentry fails as it then expects bit 14 (BS) in pending debug
-	 * exceptions being set, but that's not correct for the guest debugging
-	 * case. */
+	/* 如果正在单步执行 STI 和 MOV SS，则清除相应的中断状态位 */
 	if (vcpu->guest_debug & KVM_GUESTDBG_SINGLESTEP)
 		vmx_set_interrupt_shadow(vcpu, 0);
 
+	/* 切换性能监控 MSR */
 	atomic_switch_perf_msrs(vmx);
 	debugctlmsr = get_debugctlmsr();
 
+	/* 标记 VMCS 是否已启动 */
 	vmx->__launched = vmx->loaded_vmcs->launched;
 	asm(
-		/* Store host registers */
+		/* 存储主机寄存器 */
 		"push %%" _ASM_DX "; push %%" _ASM_BP ";"
-		"push %%" _ASM_CX " \n\t" /* placeholder for guest rcx */
+		"push %%" _ASM_CX " \n\t" /* 占位符，用于存储客户机 rcx 寄存器的值 */
 		"push %%" _ASM_CX " \n\t"
 		"cmp %%" _ASM_SP ", %c[host_rsp](%0) \n\t"
 		"je 1f \n\t"
 		"mov %%" _ASM_SP ", %c[host_rsp](%0) \n\t"
 		__ex(ASM_VMX_VMWRITE_RSP_RDX) "\n\t"
 		"1: \n\t"
-		/* Reload cr2 if changed */
+		/* 如果 CR2 寄存器发生了变化，则重新加载 */
 		"mov %c[cr2](%0), %%" _ASM_AX " \n\t"
 		"mov %%cr2, %%" _ASM_DX " \n\t"
 		"cmp %%" _ASM_AX ", %%" _ASM_DX " \n\t"
 		"je 2f \n\t"
 		"mov %%" _ASM_AX", %%cr2 \n\t"
 		"2: \n\t"
-		/* Check if vmlaunch of vmresume is needed */
+		/* 检查是否需要进行 vmlaunch 或 vmresume */
 		"cmpl $0, %c[launched](%0) \n\t"
-		/* Load guest registers.  Don't clobber flags. */
+		/* 加载客户机寄存器，不破坏标志位 */
 		"mov %c[rax](%0), %%" _ASM_AX " \n\t"
 		"mov %c[rbx](%0), %%" _ASM_BX " \n\t"
 		"mov %c[rdx](%0), %%" _ASM_DX " \n\t"
@@ -8790,15 +8801,15 @@ static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 		"mov %c[r14](%0), %%r14 \n\t"
 		"mov %c[r15](%0), %%r15 \n\t"
 #endif
-		"mov %c[rcx](%0), %%" _ASM_CX " \n\t" /* kills %0 (ecx) */
+		"mov %c[rcx](%0), %%" _ASM_CX " \n\t" /* 操作 %0 (ecx) */
 
-		/* Enter guest mode */
+		/* 进入客户机模式 */
 		"jne 1f \n\t"
 		__ex(ASM_VMX_VMLAUNCH) "\n\t"
 		"jmp 2f \n\t"
 		"1: " __ex(ASM_VMX_VMRESUME) "\n\t"
 		"2: "
-		/* Save guest registers, load host registers, keep flags */
+		/* 保存客户机寄存器，加载主机寄存器，保留标志位 */
 		"mov %0, %c[wordsize](%%" _ASM_SP ") \n\t"
 		"pop %0 \n\t"
 		"setbe %c[fail](%0)\n\t"
@@ -8871,21 +8882,19 @@ static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 #endif
 	      );
 
-	/* Eliminate branch target predictions from guest mode */
+	/* 消除客户机模式下的分支目标预测 */
 	vmexit_fill_RSB();
 
-	/* MSR_IA32_DEBUGCTLMSR is zeroed on vmexit. Restore it if needed */
+	/* 如果 debugctlmsr 不为零，则在 vmexit 时恢复它 */
 	if (debugctlmsr)
 		update_debugctlmsr(debugctlmsr);
 
 #ifndef CONFIG_X86_64
 	/*
-	 * The sysexit path does not restore ds/es, so we must set them to
-	 * a reasonable value ourselves.
+	 * sysexit 路径不会恢复 ds/es，因此我们必须自己设置它们的合理值。
 	 *
-	 * We can't defer this to vmx_load_host_state() since that function
-	 * may be executed in interrupt context, which saves and restore segments
-	 * around it, nullifying its effect.
+	 * 我们不能将这个延迟到 vmx_load_host_state()，因为该函数可能在中断上下文中执行，
+	 * 在它周围保存并恢复段寄存器，从而使其效果失效。
 	 */
 	loadsegment(ds, __USER_DS);
 	loadsegment(es, __USER_DS);
@@ -8898,26 +8907,25 @@ static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 				  | (1 << VCPU_EXREG_CR3));
 	vcpu->arch.regs_dirty = 0;
 
+	/* 读取 IDT 信息 */
 	vmx->idt_vectoring_info = vmcs_read32(IDT_VECTORING_INFO_FIELD);
 
 	vmx->loaded_vmcs->launched = 1;
 
-	vmx->exit_reason = vmcs_read32(VM_EXIT_REASON);
-
-	/*
-	 * the KVM_REQ_EVENT optimization bit is only on for one entry, and if
-	 * we did not inject a still-pending event to L1 now because of
-	 * nested_run_pending, we need to re-enable this bit.
-	 */
+	/*  如果 nested_run_pending 为真，则重新启用 KVM_REQ_EVENT 优化位 */
 	if (vmx->nested.nested_run_pending)
 		kvm_make_request(KVM_REQ_EVENT, vcpu);
 
 	vmx->nested.nested_run_pending = 0;
 
+	/* 完成原子退出 */
 	vmx_complete_atomic_exit(vmx);
+	/* 恢复 NMI 阻塞 */
 	vmx_recover_nmi_blocking(vmx);
+	/* 完成中断处理 */
 	vmx_complete_interrupts(vmx);
 }
+
 
 static void vmx_load_vmcs01(struct kvm_vcpu *vcpu)
 {
@@ -11069,7 +11077,7 @@ static struct kvm_x86_ops vmx_x86_ops = {
 	.tlb_flush = vmx_flush_tlb,
 
 	.run = vmx_vcpu_run,
-	.handle_exit = vmx_handle_exit,
+	.handle_exit = vmx_handle_exit, //内核异常处理总入口函数
 	.skip_emulated_instruction = skip_emulated_instruction,
 	.set_interrupt_shadow = vmx_set_interrupt_shadow,
 	.get_interrupt_shadow = vmx_get_interrupt_shadow,
