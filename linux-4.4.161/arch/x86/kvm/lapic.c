@@ -1358,170 +1358,218 @@ static void apic_manage_nmi_watchdog(struct kvm_lapic *apic, u32 lvt0_val)
 	}
 }
 
+/*
+ * 函数: apic_reg_write
+ * ---------------------
+ * 处理对 LAPIC（本地高级可编程中断控制器）寄存器的写操作。
+ *
+ * 参数:
+ *   - struct kvm_lapic *apic: 指向 KVM LAPIC 结构的指针。
+ *   - u32 reg: LAPIC 寄存器的偏移量。
+ *   - u32 val: 要写入寄存器的值。
+ *
+ * 返回值:
+ *   - int: 成功返回 0，表示写入成功；失败返回 1，表示写入失败。
+ *
+ * 描述:
+ *   此函数根据给定的 LAPIC 寄存器偏移量和值进行处理。根据寄存器的不同，
+ *   执行不同的操作，包括设置 LAPIC ID、处理任务优先级寄存器、写入 EOI
+ *   寄存器、设置 LAPIC LDR 寄存器、处理定时器、发送 IPI 等。对于不同的
+ *   操作，函数可能会返回写入失败，具体失败的原因也会被记录。
+ */
 static int apic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
 {
-	int ret = 0;
+    int ret = 0;
 
-	trace_kvm_apic_write(reg, val);
+    // 记录 LAPIC 寄存器写入的追踪信息
+    trace_kvm_apic_write(reg, val);
 
-	switch (reg) {
-	case APIC_ID:		/* Local APIC ID */
-		if (!apic_x2apic_mode(apic))
-			kvm_apic_set_id(apic, val >> 24);
-		else
-			ret = 1;
-		break;
+    switch (reg) {
+    case APIC_ID:        /* 本地 APIC ID */
+        if (!apic_x2apic_mode(apic))
+            kvm_apic_set_id(apic, val >> 24);
+        else
+            ret = 1;
+        break;
 
-	case APIC_TASKPRI:
-		report_tpr_access(apic, true);
-		apic_set_tpr(apic, val & 0xff);
-		break;
+    case APIC_TASKPRI:
+        report_tpr_access(apic, true);
+        apic_set_tpr(apic, val & 0xff);
+        break;
 
-	case APIC_EOI:
-		apic_set_eoi(apic);
-		break;
+    case APIC_EOI:
+        apic_set_eoi(apic);
+        break;
 
-	case APIC_LDR:
-		if (!apic_x2apic_mode(apic))
-			kvm_apic_set_ldr(apic, val & APIC_LDR_MASK);
-		else
-			ret = 1;
-		break;
+    case APIC_LDR:
+        if (!apic_x2apic_mode(apic))
+            kvm_apic_set_ldr(apic, val & APIC_LDR_MASK);
+        else
+            ret = 1;
+        break;
 
-	case APIC_DFR:
-		if (!apic_x2apic_mode(apic)) {
-			apic_set_reg(apic, APIC_DFR, val | 0x0FFFFFFF);
-			recalculate_apic_map(apic->vcpu->kvm);
-		} else
-			ret = 1;
-		break;
+    case APIC_DFR:
+        if (!apic_x2apic_mode(apic)) {
+            apic_set_reg(apic, APIC_DFR, val | 0x0FFFFFFF);
+            recalculate_apic_map(apic->vcpu->kvm);
+        } else
+            ret = 1;
+        break;
 
-	case APIC_SPIV: {
-		u32 mask = 0x3ff;
-		if (kvm_apic_get_reg(apic, APIC_LVR) & APIC_LVR_DIRECTED_EOI)
-			mask |= APIC_SPIV_DIRECTED_EOI;
-		apic_set_spiv(apic, val & mask);
-		if (!(val & APIC_SPIV_APIC_ENABLED)) {
-			int i;
-			u32 lvt_val;
+    case APIC_SPIV: {
+        u32 mask = 0x3ff;
+        if (kvm_apic_get_reg(apic, APIC_LVR) & APIC_LVR_DIRECTED_EOI)
+            mask |= APIC_SPIV_DIRECTED_EOI;
+        apic_set_spiv(apic, val & mask);
+        if (!(val & APIC_SPIV_APIC_ENABLED)) {
+            int i;
+            u32 lvt_val;
 
-			for (i = 0; i < APIC_LVT_NUM; i++) {
-				lvt_val = kvm_apic_get_reg(apic,
-						       APIC_LVTT + 0x10 * i);
-				apic_set_reg(apic, APIC_LVTT + 0x10 * i,
-					     lvt_val | APIC_LVT_MASKED);
-			}
-			apic_update_lvtt(apic);
-			atomic_set(&apic->lapic_timer.pending, 0);
+            for (i = 0; i < APIC_LVT_NUM; i++) {
+                lvt_val = kvm_apic_get_reg(apic, APIC_LVTT + 0x10 * i);
+                apic_set_reg(apic, APIC_LVTT + 0x10 * i,
+                             lvt_val | APIC_LVT_MASKED);
+            }
+            apic_update_lvtt(apic);
+            atomic_set(&apic->lapic_timer.pending, 0);
+        }
+        break;
+    }
+    case APIC_ICR:
+        /* 没有延迟，因此我们总是清除挂起位 */
+        apic_set_reg(apic, APIC_ICR, val & ~(1 << 12));
+        apic_send_ipi(apic);
+        break;
 
-		}
-		break;
-	}
-	case APIC_ICR:
-		/* No delay here, so we always clear the pending bit */
-		apic_set_reg(apic, APIC_ICR, val & ~(1 << 12));
-		apic_send_ipi(apic);
-		break;
+    case APIC_ICR2:
+        if (!apic_x2apic_mode(apic))
+            val &= 0xff000000;
+        apic_set_reg(apic, APIC_ICR2, val);
+        break;
 
-	case APIC_ICR2:
-		if (!apic_x2apic_mode(apic))
-			val &= 0xff000000;
-		apic_set_reg(apic, APIC_ICR2, val);
-		break;
+    case APIC_LVT0:
+        apic_manage_nmi_watchdog(apic, val);
+    case APIC_LVTTHMR:
+    case APIC_LVTPC:
+    case APIC_LVT1:
+    case APIC_LVTERR:
+        /* TODO: 检查向量 */
+        if (!kvm_apic_sw_enabled(apic))
+            val |= APIC_LVT_MASKED;
 
-	case APIC_LVT0:
-		apic_manage_nmi_watchdog(apic, val);
-	case APIC_LVTTHMR:
-	case APIC_LVTPC:
-	case APIC_LVT1:
-	case APIC_LVTERR:
-		/* TODO: Check vector */
-		if (!kvm_apic_sw_enabled(apic))
-			val |= APIC_LVT_MASKED;
+        val &= apic_lvt_mask[(reg - APIC_LVTT) >> 4];
+        apic_set_reg(apic, reg, val);
 
-		val &= apic_lvt_mask[(reg - APIC_LVTT) >> 4];
-		apic_set_reg(apic, reg, val);
+        break;
 
-		break;
+    case APIC_LVTT:
+        if (!kvm_apic_sw_enabled(apic))
+            val |= APIC_LVT_MASKED;
+        val &= (apic_lvt_mask[0] | apic->lapic_timer.timer_mode_mask);
+        apic_set_reg(apic, APIC_LVTT, val);
+        apic_update_lvtt(apic);
+        break;
 
-	case APIC_LVTT:
-		if (!kvm_apic_sw_enabled(apic))
-			val |= APIC_LVT_MASKED;
-		val &= (apic_lvt_mask[0] | apic->lapic_timer.timer_mode_mask);
-		apic_set_reg(apic, APIC_LVTT, val);
-		apic_update_lvtt(apic);
-		break;
+    case APIC_TMICT:
+        if (apic_lvtt_tscdeadline(apic))
+            break;
 
-	case APIC_TMICT:
-		if (apic_lvtt_tscdeadline(apic))
-			break;
+        hrtimer_cancel(&apic->lapic_timer.timer);
+        apic_set_reg(apic, APIC_TMICT, val);
+        start_apic_timer(apic);
+        break;
 
-		hrtimer_cancel(&apic->lapic_timer.timer);
-		apic_set_reg(apic, APIC_TMICT, val);
-		start_apic_timer(apic);
-		break;
+    case APIC_TDCR:
+        if (val & 4)
+            apic_debug("KVM_WRITE:TDCR %x\n", val);
+        apic_set_reg(apic, APIC_TDCR, val);
+        update_divide_count(apic);
+        break;
 
-	case APIC_TDCR:
-		if (val & 4)
-			apic_debug("KVM_WRITE:TDCR %x\n", val);
-		apic_set_reg(apic, APIC_TDCR, val);
-		update_divide_count(apic);
-		break;
+    case APIC_ESR:
+        if (apic_x2apic_mode(apic) && val != 0) {
+            apic_debug("KVM_WRITE:ESR not zero %x\n", val);
+            ret = 1;
+        }
+        break;
 
-	case APIC_ESR:
-		if (apic_x2apic_mode(apic) && val != 0) {
-			apic_debug("KVM_WRITE:ESR not zero %x\n", val);
-			ret = 1;
-		}
-		break;
+    case APIC_SELF_IPI:
+        if (apic_x2apic_mode(apic)) {
+            apic_reg_write(apic, APIC_ICR, 0x40000 | (val & 0xff));
+        } else
+            ret = 1;
+        break;
+    default:
+        ret = 1;
+        break;
+    }
 
-	case APIC_SELF_IPI:
-		if (apic_x2apic_mode(apic)) {
-			apic_reg_write(apic, APIC_ICR, 0x40000 | (val & 0xff));
-		} else
-			ret = 1;
-		break;
-	default:
-		ret = 1;
-		break;
-	}
-	if (ret)
-		apic_debug("Local APIC Write to read-only register %x\n", reg);
-	return ret;
+    // 如果写入失败，记录错误信息
+    if (ret)
+        apic_debug("Local APIC Write to read-only register %x\n", reg);
+
+    return ret;
 }
 
+
+/*
+ * 函数: apic_mmio_write
+ * ---------------------
+ * 处理对 LAPIC（本地高级可编程中断控制器）的 MMIO 写操作。
+ *
+ * 参数:
+ *   - struct kvm_vcpu *vcpu: 指向 KVM VCPU（虚拟中央处理单元）的指针。
+ *   - struct kvm_io_device *this: 指向 KVM IO 设备的指针，代表 LAPIC。
+ *   - gpa_t address: 写操作的物理地址。
+ *   - int len: 写入的数据长度。
+ *   - const void *data: 指向写入数据的指针。
+ *
+ * 返回值:
+ *   - int: 成功返回 0，失败返回错误代码。
+ *
+ * 描述:
+ *   此函数用于处理对 LAPIC 的 MMIO 写操作。首先，通过给定的地址计算相对于
+ *   LAPIC 基地址的偏移量。然后，检查地址是否在支持的范围内，如果不支持，返回
+ *   错误。接下来，检查数据长度和地址对齐是否符合规范，如果不符合，记录错误
+ *   信息并返回。最后，将写入的数据转换为 u32 类型，调用 apic_reg_write 函数
+ *   将数据写入 LAPIC 寄存器。如果写入的是 EOI（End of Interrupt）寄存器，
+ *   不进行详细打印。
+ */
 static int apic_mmio_write(struct kvm_vcpu *vcpu, struct kvm_io_device *this,
 			    gpa_t address, int len, const void *data)
 {
-	struct kvm_lapic *apic = to_lapic(this);
-	unsigned int offset = address - apic->base_address;
-	u32 val;
+    struct kvm_lapic *apic = to_lapic(this);
+    unsigned int offset = address - apic->base_address;
+    u32 val;
 
-	if (!apic_mmio_in_range(apic, address))
-		return -EOPNOTSUPP;
+    // 检查地址是否在支持的范围内
+    if (!apic_mmio_in_range(apic, address))
+        return -EOPNOTSUPP;
 
-	/*
-	 * APIC register must be aligned on 128-bits boundary.
-	 * 32/64/128 bits registers must be accessed thru 32 bits.
-	 * Refer SDM 8.4.1
-	 */
-	if (len != 4 || (offset & 0xf)) {
-		/* Don't shout loud, $infamous_os would cause only noise. */
-		apic_debug("apic write: bad size=%d %lx\n", len, (long)address);
-		return 0;
-	}
+    /*
+     * LAPIC 寄存器必须在 128 位边界上对齐。
+     * 32/64/128 位寄存器必须通过 32 位方式访问。
+     * 参考 SDM 8.4.1
+     */
+    if (len != 4 || (offset & 0xf)) {
+        /* 不要大声喊，$infamous_os 只会引起噪音。 */
+        apic_debug("apic write: bad size=%d %lx\n", len, (long)address);
+        return 0;
+    }
 
-	val = *(u32*)data;
+    val = *(u32*)data;
 
-	/* too common printing */
-	if (offset != APIC_EOI)
-		apic_debug("%s: offset 0x%x with length 0x%x, and value is "
-			   "0x%x\n", __func__, offset, len, val);
+    /* 这里进行详细打印 */
+    if (offset != APIC_EOI)
+        apic_debug("%s: offset 0x%x with length 0x%x, and value is "
+                   "0x%x\n", __func__, offset, len, val);
 
-	apic_reg_write(apic, offset & 0xff0, val);
+    // 将数据写入 LAPIC 寄存器
+    apic_reg_write(apic, offset & 0xff0, val);
 
-	return 0;
+    return 0;
 }
+ 
 
 void kvm_lapic_set_eoi(struct kvm_vcpu *vcpu)
 {

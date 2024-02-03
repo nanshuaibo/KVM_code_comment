@@ -37,7 +37,7 @@ struct kvm_lapic {
 	 * Note: Only one register, the TPR, is used by the microcode.
 	 */
 	void *regs; // APIC 寄存器页，与 guest 中的 APIC 寄存器布局一一对应
-	gpa_t vapic_addr;  // 虚拟化的 APIC 地址
+	gpa_t vapic_addr;  // 虚拟APIC 地址
 	struct gfn_to_hva_cache vapic_cache; // 用于加速虚拟 APIC 地址到主机虚拟地址的转换的缓存
 	unsigned long pending_events; // 挂起的事件标志
 	unsigned int sipi_vector;
