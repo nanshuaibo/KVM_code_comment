@@ -150,10 +150,9 @@ static inline bool is_64_bit_mode(struct kvm_vcpu *vcpu)
 static inline bool is_64_bit_hypercall(struct kvm_vcpu *vcpu)
 {
 	/*
-	 * If running with protected guest state, the CS register is not
-	 * accessible. The hypercall register values will have had to been
-	 * provided in 64-bit mode, so assume the guest is in 64-bit.
-	 */
+	* 如果运行时使用受保护的客户状态，则无法访问 CS 寄存器。超级调用寄存器的值必须在 64 位模式下提供，
+	* 因此假设客户端处于 64 位模式。
+	*/
 	return vcpu->arch.guest_state_protected || is_64_bit_mode(vcpu);
 }
 

@@ -685,32 +685,33 @@ int kvm_pv_send_ipi(struct kvm *kvm, unsigned long ipi_bitmap_low,
 		    unsigned long ipi_bitmap_high, u32 min,
 		    unsigned long icr, int op_64_bit)
 {
-	struct kvm_apic_map *map;
-	struct kvm_lapic_irq irq = {0};
-	int cluster_size = op_64_bit ? 64 : 32;
-	int count;
+	struct kvm_apic_map *map;  // 定义一个指向 kvm_apic_map 结构的指针 map
+	struct kvm_lapic_irq irq = {0};  // 定义一个 kvm_lapic_irq 结构体并初始化为零
+	int cluster_size = op_64_bit ? 64 : 32;  // 根据 op_64_bit 参数确定集群大小为 64 或 32
+	int count;  // 定义一个整数变量 count 用于统计发送的中断数量
 
-	if (icr & (APIC_DEST_MASK | APIC_SHORT_MASK))
-		return -KVM_EINVAL;
+	if (icr & (APIC_DEST_MASK | APIC_SHORT_MASK))  // 检查 icr 中的位掩码，确保目标和模式字段都为 0
+		return -KVM_EINVAL;  // 如果不符合要求，返回参数无效的错误码
 
-	irq.vector = icr & APIC_VECTOR_MASK;
-	irq.delivery_mode = icr & APIC_MODE_MASK;
-	irq.level = (icr & APIC_INT_ASSERT) != 0;
-	irq.trig_mode = icr & APIC_INT_LEVELTRIG;
+	irq.vector = icr & APIC_VECTOR_MASK;  // 从 icr 中提取中断向量
+	irq.delivery_mode = icr & APIC_MODE_MASK;  // 从 icr 中提取传递模式
+	irq.level = (icr & APIC_INT_ASSERT) != 0;  // 检查 icr 中的中断级别位
+	irq.trig_mode = icr & APIC_INT_LEVELTRIG;  // 检查 icr 中的触发模式位
 
-	rcu_read_lock();
-	map = rcu_dereference(kvm->arch.apic_map);
+	rcu_read_lock();  // 获取 RCU 读锁
+	map = rcu_dereference(kvm->arch.apic_map);  // 获取 kvm 结构中的 apic_map 成员
 
-	count = -EOPNOTSUPP;
-	if (likely(map)) {
-		count = __pv_send_ipi(&ipi_bitmap_low, map, &irq, min);
-		min += cluster_size;
-		count += __pv_send_ipi(&ipi_bitmap_high, map, &irq, min);
+	count = -EOPNOTSUPP;  // 初始化 count 为不支持的错误码
+	if (likely(map)) {  // 如果 map 非空
+		count = __pv_send_ipi(&ipi_bitmap_low, map, &irq, min);  // 发送低位图中断请求，并更新 count
+		min += cluster_size;  // 更新 min
+		count += __pv_send_ipi(&ipi_bitmap_high, map, &irq, min);  // 发送高位图中断请求，并更新 count
 	}
 
-	rcu_read_unlock();
-	return count;
+	rcu_read_unlock();  // 释放 RCU 读锁
+	return count;  // 返回发送的中断数量
 }
+
 
 static int pv_eoi_put_user(struct kvm_vcpu *vcpu, u8 val)
 {

@@ -5984,10 +5984,10 @@ static int handle_notify(struct kvm_vcpu *vcpu)
 }
 
 /*
- * The exit handlers return 1 if the exit was handled fully and guest execution
- * may resume.  Otherwise they set the kvm_run parameter to indicate what needs
- * to be done to userspace and return 0.
+ * 如果退出被完全处理并且可以恢复客户机执行，则退出处理程序返回1。
+ * 否则，它们设置kvm_run参数以指示对用户空间需要执行的操作，并返回0。
  */
+
 static int (*kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
 	[EXIT_REASON_EXCEPTION_NMI]           = handle_exception_nmi,
 	[EXIT_REASON_EXTERNAL_INTERRUPT]      = handle_external_interrupt,

@@ -25,7 +25,8 @@
         "kvm_mmu.h": "c",
         "kvm_watcher.h": "c",
         "kvm_exits.h": "c",
-        "kvm_vcpu.h": "c"
+        "kvm_vcpu.h": "c",
+        "entry-kvm.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled",
     "git.ignoreLimitWarning": true

@@ -9457,40 +9457,52 @@ int kvm_emulate_ap_reset_hold(struct kvm_vcpu *vcpu)
 EXPORT_SYMBOL_GPL(kvm_emulate_ap_reset_hold);
 
 #ifdef CONFIG_X86_64
-static int kvm_pv_clock_pairing(struct kvm_vcpu *vcpu, gpa_t paddr,
-			        unsigned long clock_type)
+
+/**
+ * KVM虚拟机中PVClock与物理时钟进行配对的函数
+ * 
+ * @param vcpu 虚拟CPU的指针
+ * @param paddr 物理地址，用于存储PVClock配对信息的位置
+ * @param clock_type 时钟类型，应为KVM_CLOCK_PAIRING_WALLCLOCK
+ * @return 成功返回0，失败返回相应错误码
+ */
+static int kvm_pv_clock_pairing(struct kvm_vcpu *vcpu, gpa_t paddr, unsigned long clock_type)
 {
-	struct kvm_clock_pairing clock_pairing;
-	struct timespec64 ts;
-	u64 cycle;
-	int ret;
+    struct kvm_clock_pairing clock_pairing;
+    struct timespec64 ts;
+    u64 cycle;
+    int ret;
 
-	if (clock_type != KVM_CLOCK_PAIRING_WALLCLOCK)
-		return -KVM_EOPNOTSUPP;
+    // 检查时钟类型是否为KVM_CLOCK_PAIRING_WALLCLOCK
+    if (clock_type != KVM_CLOCK_PAIRING_WALLCLOCK)
+        return -KVM_EOPNOTSUPP;
 
-	/*
-	 * When tsc is in permanent catchup mode guests won't be able to use
-	 * pvclock_read_retry loop to get consistent view of pvclock
-	 */
-	if (vcpu->arch.tsc_always_catchup)
-		return -KVM_EOPNOTSUPP;
+    /*
+     * 当TSC（时间戳计数器）处于永久追赶模式时，
+     * 客户机将无法使用pvclock_read_retry循环获得一致的pvclock视图
+     */
+    if (vcpu->arch.tsc_always_catchup)
+        return -KVM_EOPNOTSUPP;
 
-	if (!kvm_get_walltime_and_clockread(&ts, &cycle))
-		return -KVM_EOPNOTSUPP;
+    // 获取当前墙钟时间和时钟周期
+    if (!kvm_get_walltime_and_clockread(&ts, &cycle))
+        return -KVM_EOPNOTSUPP;
 
-	clock_pairing.sec = ts.tv_sec;
-	clock_pairing.nsec = ts.tv_nsec;
-	clock_pairing.tsc = kvm_read_l1_tsc(vcpu, cycle);
-	clock_pairing.flags = 0;
-	memset(&clock_pairing.pad, 0, sizeof(clock_pairing.pad));
+    // 将墙钟时间、时钟周期和标志写入clock_pairing结构体
+    clock_pairing.sec = ts.tv_sec;
+    clock_pairing.nsec = ts.tv_nsec;
+    clock_pairing.tsc = kvm_read_l1_tsc(vcpu, cycle);
+    clock_pairing.flags = 0;
+    memset(&clock_pairing.pad, 0, sizeof(clock_pairing.pad));
 
-	ret = 0;
-	if (kvm_write_guest(vcpu->kvm, paddr, &clock_pairing,
-			    sizeof(struct kvm_clock_pairing)))
-		ret = -KVM_EFAULT;
+    ret = 0;
+    // 将clock_pairing结构体写入虚拟机内存的指定物理地址
+    if (kvm_write_guest(vcpu->kvm, paddr, &clock_pairing, sizeof(struct kvm_clock_pairing)))
+        ret = -KVM_EFAULT;
 
-	return ret;
+    return ret;
 }
+
 #endif
 
 /*
@@ -9603,20 +9615,25 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 	unsigned long nr, a0, a1, a2, a3, ret;
 	int op_64_bit;
 
+	// 检查是否启用了Xen超级调用，如果是，则调用Xen超级调用处理函数
 	if (kvm_xen_hypercall_enabled(vcpu->kvm))
 		return kvm_xen_hypercall(vcpu);
 
+	// 检查是否启用了Hypervisor超级调用，如果是，则调用Hypervisor超级调用处理函数
 	if (kvm_hv_hypercall_enabled(vcpu))
 		return kvm_hv_hypercall(vcpu);
 
+	// 从寄存器中读取超级调用号及参数
 	nr = kvm_rax_read(vcpu);
 	a0 = kvm_rbx_read(vcpu);
 	a1 = kvm_rcx_read(vcpu);
 	a2 = kvm_rdx_read(vcpu);
 	a3 = kvm_rsi_read(vcpu);
 
+	// 记录超级调用的追踪信息
 	trace_kvm_hypercall(nr, a0, a1, a2, a3);
 
+	// 检查是否为64位超级调用
 	op_64_bit = is_64_bit_hypercall(vcpu);
 	if (!op_64_bit) {
 		nr &= 0xFFFFFFFF;
@@ -9626,6 +9643,7 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 		a3 &= 0xFFFFFFFF;
 	}
 
+	// 检查当前CPU的特权级是否为0
 	if (static_call(kvm_x86_get_cpl)(vcpu) != 0) {
 		ret = -KVM_EPERM;
 		goto out;
@@ -9633,11 +9651,13 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 
 	ret = -KVM_ENOSYS;
 
+	// 根据超级调用号执行相应的操作
 	switch (nr) {
 	case KVM_HC_VAPIC_POLL_IRQ:
 		ret = 0;
 		break;
 	case KVM_HC_KICK_CPU:
+		// 处理CPU唤醒的超级调用
 		if (!guest_pv_has(vcpu, KVM_FEATURE_PV_UNHALT))
 			break;
 
@@ -9647,53 +9667,52 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 		break;
 #ifdef CONFIG_X86_64
 	case KVM_HC_CLOCK_PAIRING:
+		// 处理时钟配对的超级调用
 		ret = kvm_pv_clock_pairing(vcpu, a0, a1);
 		break;
 #endif
 	case KVM_HC_SEND_IPI:
+		// 处理发送中断请求的超级调用
 		if (!guest_pv_has(vcpu, KVM_FEATURE_PV_SEND_IPI))
 			break;
 
 		ret = kvm_pv_send_ipi(vcpu->kvm, a0, a1, a2, a3, op_64_bit);
 		break;
 	case KVM_HC_SCHED_YIELD:
+		// 处理调度让出的超级调用
 		if (!guest_pv_has(vcpu, KVM_FEATURE_PV_SCHED_YIELD))
 			break;
 
 		kvm_sched_yield(vcpu, a0);
 		ret = 0;
 		break;
-	case KVM_HC_MAP_GPA_RANGE: {
-		u64 gpa = a0, npages = a1, attrs = a2;
-
+	case KVM_HC_MAP_GPA_RANGE:
+		// 处理GPA范围映射的超级调用
 		ret = -KVM_ENOSYS;
 		if (!(vcpu->kvm->arch.hypercall_exit_enabled & (1 << KVM_HC_MAP_GPA_RANGE)))
 			break;
 
-		if (!PAGE_ALIGNED(gpa) || !npages ||
-		    gpa_to_gfn(gpa) + npages <= gpa_to_gfn(gpa)) {
-			ret = -KVM_EINVAL;
-			break;
-		}
-
+		// 设置KVM_EXIT_HYPERCALL退出类型，并填充相关信息
 		vcpu->run->exit_reason        = KVM_EXIT_HYPERCALL;
 		vcpu->run->hypercall.nr       = KVM_HC_MAP_GPA_RANGE;
-		vcpu->run->hypercall.args[0]  = gpa;
-		vcpu->run->hypercall.args[1]  = npages;
-		vcpu->run->hypercall.args[2]  = attrs;
+		vcpu->run->hypercall.args[0]  = a0;
+		vcpu->run->hypercall.args[1]  = a1;
+		vcpu->run->hypercall.args[2]  = a2;
 		vcpu->run->hypercall.longmode = op_64_bit;
 		vcpu->arch.complete_userspace_io = complete_hypercall_exit;
 		return 0;
-	}
 	default:
 		ret = -KVM_ENOSYS;
 		break;
 	}
+
 out:
+	// 如果不是64位超级调用，则返回值需要截断为32位
 	if (!op_64_bit)
 		ret = (u32)ret;
 	kvm_rax_write(vcpu, ret);
 
+	// 更新超级调用统计信息，并跳过被模拟的指令
 	++vcpu->stat.hypercalls;
 	return kvm_skip_emulated_instruction(vcpu);
 }
