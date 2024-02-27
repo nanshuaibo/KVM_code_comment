@@ -363,42 +363,36 @@ u64 mark_spte_for_access_track(u64 spte)
 
 void kvm_mmu_set_mmio_spte_mask(u64 mmio_value, u64 mmio_mask, u64 access_mask)
 {
+	// 如果 access_mask 不是无符号整数，则触发 BUG
 	BUG_ON((u64)(unsigned)access_mask != access_mask);
+	// 如果 mmio_value 与 shadow_nonpresent_or_rsvd_lower_gfn_mask 存在重叠，则触发警告
 	WARN_ON(mmio_value & shadow_nonpresent_or_rsvd_lower_gfn_mask);
 
 	/*
-	 * Reset to the original module param value to honor userspace's desire
-	 * to (dis)allow MMIO caching.  Update the param itself so that
-	 * userspace can see whether or not KVM is actually using MMIO caching.
+	 * 重置为原始模块参数值，以尊重用户空间对（禁止）允许 MMIO 缓存的需求。
+	 * 更新参数本身，以便用户空间可以看到 KVM 是否实际使用了 MMIO 缓存。
 	 */
 	enable_mmio_caching = allow_mmio_caching;
 	if (!enable_mmio_caching)
 		mmio_value = 0;
 
 	/*
-	 * The mask must contain only bits that are carved out specifically for
-	 * the MMIO SPTE mask, e.g. to ensure there's no overlap with the MMIO
-	 * generation.
+	 * 掩码必须仅包含专门用于 MMIO SPTE 掩码的位，例如，以确保不会与 MMIO 生成重叠。
 	 */
 	if (WARN_ON(mmio_mask & ~SPTE_MMIO_ALLOWED_MASK))
 		mmio_value = 0;
 
 	/*
-	 * Disable MMIO caching if the MMIO value collides with the bits that
-	 * are used to hold the relocated GFN when the L1TF mitigation is
-	 * enabled.  This should never fire as there is no known hardware that
-	 * can trigger this condition, e.g. SME/SEV CPUs that require a custom
-	 * MMIO value are not susceptible to L1TF.
+	 * 如果 MMIO 值与用于在启用 L1TF 缓解时保存重定位 GFN 的位冲突，则禁用 MMIO 缓存。
+	 * 这应该永远不会触发，因为没有已知的硬件可以触发此条件，例如，需要自定义 MMIO 值的 SME/SEV CPU 不容易受到 L1TF 的影响。
 	 */
 	if (WARN_ON(mmio_value & (shadow_nonpresent_or_rsvd_mask <<
 				  SHADOW_NONPRESENT_OR_RSVD_MASK_LEN)))
 		mmio_value = 0;
 
 	/*
-	 * The masked MMIO value must obviously match itself and a removed SPTE
-	 * must not get a false positive.  Removed SPTEs and MMIO SPTEs should
-	 * never collide as MMIO must set some RWX bits, and removed SPTEs must
-	 * not set any RWX bits.
+	 * 掩码后的 MMIO 值显然必须与其自身匹配，并且已删除的 SPTE 不得得到误报。
+	 * 已删除的 SPTE 和 MMIO SPTE 永远不应发生碰撞，因为 MMIO 必须设置一些 RWX 位，并且已删除的 SPTE 不得设置任何 RWX 位。
 	 */
 	if (WARN_ON((mmio_value & mmio_mask) != mmio_value) ||
 	    WARN_ON(mmio_value && (REMOVED_SPTE & mmio_mask) == mmio_value))
@@ -407,11 +401,13 @@ void kvm_mmu_set_mmio_spte_mask(u64 mmio_value, u64 mmio_mask, u64 access_mask)
 	if (!mmio_value)
 		enable_mmio_caching = false;
 
+	// 设置 MMIO 值、掩码和访问掩码
 	shadow_mmio_value = mmio_value;
 	shadow_mmio_mask  = mmio_mask;
 	shadow_mmio_access_mask = access_mask;
 }
 EXPORT_SYMBOL_GPL(kvm_mmu_set_mmio_spte_mask);
+
 
 void kvm_mmu_set_me_spte_mask(u64 me_value, u64 me_mask)
 {

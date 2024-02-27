@@ -4016,7 +4016,17 @@ static int get_walk(struct kvm_vcpu *vcpu, u64 addr, u64 *sptes, int *root_level
 	return leaf;
 }
 
-/* return true if reserved bit(s) are detected on a valid, non-MMIO SPTE. */
+/*
+ * 如果在有效的、非 MMIO 的 SPTE（Second Level Page Table Entry）中检测到保留位，则返回 true。
+ *
+ * @vcpu: 指向虚拟 CPU 结构体的指针
+ * @addr: 虚拟地址
+ * @sptep: 指向存储 SPTE 的指针
+ *
+ * 返回值：
+ * - true：如果在有效的、非 MMIO 的 SPTE 中检测到保留位
+ * - false：否则
+ */
 static bool get_mmio_spte(struct kvm_vcpu *vcpu, u64 addr, u64 *sptep)
 {
 	u64 sptes[PT64_ROOT_MAX_LEVEL + 1];
@@ -4024,38 +4034,45 @@ static bool get_mmio_spte(struct kvm_vcpu *vcpu, u64 addr, u64 *sptep)
 	int root, leaf, level;
 	bool reserved = false;
 
+	// 开始无锁遍历影子页表
 	walk_shadow_page_lockless_begin(vcpu);
 
+	// 获取地址 addr 对应的页表项
 	if (is_tdp_mmu(vcpu->arch.mmu))
 		leaf = kvm_tdp_mmu_get_walk(vcpu, addr, sptes, &root);
 	else
 		leaf = get_walk(vcpu, addr, sptes, &root);
 
+	// 结束无锁遍历影子页表
 	walk_shadow_page_lockless_end(vcpu);
 
+	// 如果 leaf 小于 0，则表示未找到对应的页表项，直接返回
 	if (unlikely(leaf < 0)) {
 		*sptep = 0ull;
 		return reserved;
 	}
 
+	// 获取 addr 对应的页表项值
 	*sptep = sptes[leaf];
 
 	/*
-	 * Skip reserved bits checks on the terminal leaf if it's not a valid
-	 * SPTE.  Note, this also (intentionally) skips MMIO SPTEs, which, by
-	 * design, always have reserved bits set.  The purpose of the checks is
-	 * to detect reserved bits on non-MMIO SPTEs. i.e. buggy SPTEs.
+	 * 如果终端 leaf 不是有效的 SPTE，则跳过对保留位的检查。
+	 * 注意，这也（故意地）跳过了 MMIO SPTE 的检查，因为按设计，这些 SPTE 总是设置了保留位。
+	 * 这些检查的目的是检测非 MMIO SPTE 上的保留位，即有问题的 SPTE。
 	 */
 	if (!is_shadow_present_pte(sptes[leaf]))
 		leaf++;
 
+	// 获取保留位检查器
 	rsvd_check = &vcpu->arch.mmu->shadow_zero_check;
 
+	// 从根到叶依次检查每个级别的 SPTE 中是否设置了保留位
 	for (level = root; level >= leaf; level--)
 		reserved |= is_rsvd_spte(rsvd_check, sptes[level], level);
 
+	// 如果检测到保留位，则输出错误信息并返回 true
 	if (reserved) {
-		pr_err("%s: reserved bits set on MMU-present spte, addr 0x%llx, hierarchy:\n",
+		pr_err("%s: 在 MMU 存在的 SPTE 上设置了保留位，地址 0x%llx，层级：\n",
 		       __func__, addr);
 		for (level = root; level >= leaf; level--)
 			pr_err("------ spte = 0x%llx level = %d, rsvd bits = 0x%llx",
@@ -4066,39 +4083,59 @@ static bool get_mmio_spte(struct kvm_vcpu *vcpu, u64 addr, u64 *sptep)
 	return reserved;
 }
 
+
+/*
+ * 处理 MMIO 页面错误
+ *
+ * @vcpu: 指向发生页面错误的虚拟 CPU 结构体的指针
+ * @addr: 页面错误发生的线性地址
+ * @direct: 指示是否为直接 MMIO（Memory-Mapped I/O）访问的布尔值
+ *
+ * 返回值：
+ * - RET_PF_EMULATE：成功处理 MMIO 页面错误并模拟了访问
+ * - -EINVAL：发生了保留位错误
+ * - RET_PF_INVALID：发生了无效的 MMIO 页面错误
+ * - RET_PF_RETRY：由于其他 CPU 抹掉了页表，需要重新尝试页面错误
+ */
 static int handle_mmio_page_fault(struct kvm_vcpu *vcpu, u64 addr, bool direct)
 {
 	u64 spte;
 	bool reserved;
 
+	// 如果 MMIO 信息已在缓存中，则返回 RET_PF_EMULATE
 	if (mmio_info_in_cache(vcpu, addr, direct))
 		return RET_PF_EMULATE;
 
+	// 获取 MMIO SPTE（Second Level Page Table Entry）
 	reserved = get_mmio_spte(vcpu, addr, &spte);
 	if (WARN_ON(reserved))
 		return -EINVAL;
 
+	// 如果是 MMIO SPTE，则进行模拟访问
 	if (is_mmio_spte(spte)) {
 		gfn_t gfn = get_mmio_spte_gfn(spte);
 		unsigned int access = get_mmio_spte_access(spte);
 
+		// 检查 MMIO SPTE 是否有效
 		if (!check_mmio_spte(vcpu, spte))
 			return RET_PF_INVALID;
 
+		// 如果是直接 MMIO 访问，则将地址重置为 0
 		if (direct)
 			addr = 0;
 
+		// 跟踪 MMIO 页面错误并缓存 MMIO 信息
 		trace_handle_mmio_page_fault(addr, gfn, access);
 		vcpu_cache_mmio_info(vcpu, addr, gfn, access);
 		return RET_PF_EMULATE;
 	}
 
 	/*
-	 * If the page table is zapped by other cpus, let CPU fault again on
-	 * the address.
+	 * 如果页表被其他 CPU 抹掉，让 CPU 再次在该地址发生页面错误。
 	 */
 	return RET_PF_RETRY;
 }
+
 
 static bool page_fault_handle_page_track(struct kvm_vcpu *vcpu,
 					 struct kvm_page_fault *fault)
