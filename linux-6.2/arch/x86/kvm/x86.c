@@ -1992,6 +1992,20 @@ static u64 kvm_msr_reason(int r)
 	}
 }
 
+/*
+ * 如果用户空间希望了解此 MSR（Model Specific Register） 故障的详细信息，则返回 1；否则返回 0。
+ *
+ * @vcpu: 指向当前虚拟 CPU 结构体的指针
+ * @index: MSR 的索引
+ * @exit_reason: 退出原因
+ * @data: 数据
+ * @completion: 完成函数指针，用于处理用户空间 MSR 故障的完成回调
+ * @r: MSR 故障代码
+ *
+ * 返回值：
+ * - 1：如果用户希望了解此 MSR 故障的详细信息
+ * - 0：否则
+ */
 static int kvm_msr_user_space(struct kvm_vcpu *vcpu, u32 index,
 			      u32 exit_reason, u64 data,
 			      int (*completion)(struct kvm_vcpu *vcpu),
@@ -1999,10 +2013,11 @@ static int kvm_msr_user_space(struct kvm_vcpu *vcpu, u32 index,
 {
 	u64 msr_reason = kvm_msr_reason(r);
 
-	/* Check if the user wanted to know about this MSR fault */
+	/* 检查用户是否希望了解此 MSR 故障 */
 	if (!(vcpu->kvm->arch.user_space_msr_mask & msr_reason))
 		return 0;
 
+	// 设置退出原因、MSR 错误、MSR 原因、索引、数据以及完成函数指针
 	vcpu->run->exit_reason = exit_reason;
 	vcpu->run->msr.error = 0;
 	memset(vcpu->run->msr.pad, 0, sizeof(vcpu->run->msr.pad));
@@ -2014,54 +2029,72 @@ static int kvm_msr_user_space(struct kvm_vcpu *vcpu, u32 index,
 	return 1;
 }
 
+
+/*
+ * 模拟执行 rdmsr 指令
+ *
+ * @vcpu: 指向当前虚拟 CPU 结构体的指针
+ *
+ * 返回值：
+ * - 0：成功执行 rdmsr 指令并完成模拟
+ * - 其他值：失败，需要进一步处理或请求用户空间处理
+ */
 int kvm_emulate_rdmsr(struct kvm_vcpu *vcpu)
 {
-	u32 ecx = kvm_rcx_read(vcpu);
+	u32 ecx = kvm_rcx_read(vcpu); // 读取 ecx 寄存器的值
 	u64 data;
 	int r;
 
+	// 获取 MSR（Model Specific Register） 的值，并进行过滤
 	r = kvm_get_msr_with_filter(vcpu, ecx, &data);
 
 	if (!r) {
+		// 如果获取成功，则跟踪 MSR 读取事件并将结果写入 rax 和 rdx 寄存器
 		trace_kvm_msr_read(ecx, data);
-
 		kvm_rax_write(vcpu, data & -1u);
 		kvm_rdx_write(vcpu, (data >> 32) & -1u);
 	} else {
-		/* MSR read failed? See if we should ask user space */
+		/* MSR 读取失败？看看是否应该请求用户空间处理 */
 		if (kvm_msr_user_space(vcpu, ecx, KVM_EXIT_X86_RDMSR, 0,
 				       complete_fast_rdmsr, r))
-			return 0;
-		trace_kvm_msr_read_ex(ecx);
+			return 0; // 如果需要请求用户空间处理，则直接返回
+		trace_kvm_msr_read_ex(ecx); // 跟踪 MSR 读取异常事件
 	}
 
+	// 调用相应体系结构的函数，完成模拟执行 MSR 指令
 	return static_call(kvm_x86_complete_emulated_msr)(vcpu, r);
 }
-EXPORT_SYMBOL_GPL(kvm_emulate_rdmsr);
+EXPORT_SYMBOL_GPL(kvm_emulate_rdmsr); // 导出该函数
+
 
 int kvm_emulate_wrmsr(struct kvm_vcpu *vcpu)
 {
-	u32 ecx = kvm_rcx_read(vcpu);
-	u64 data = kvm_read_edx_eax(vcpu);
-	int r;
+    u32 ecx = kvm_rcx_read(vcpu); // 读取RCX寄存器的值，通常用于指定MSR的编号。
+    u64 data = kvm_read_edx_eax(vcpu); // 从EDX:EAX寄存器中读取数据，这是要写入MSR的值。
+    int r;
 
-	r = kvm_set_msr_with_filter(vcpu, ecx, data);
+    // 尝试设置MSR的值。如果成功，r将为0；如果失败，r将记录错误码。
+    r = kvm_set_msr_with_filter(vcpu, ecx, data);
 
-	if (!r) {
-		trace_kvm_msr_write(ecx, data);
-	} else {
-		/* MSR write failed? See if we should ask user space */
-		if (kvm_msr_user_space(vcpu, ecx, KVM_EXIT_X86_WRMSR, data,
-				       complete_fast_msr_access, r))
-			return 0;
-		/* Signal all other negative errors to userspace */
-		if (r < 0)
-			return r;
-		trace_kvm_msr_write_ex(ecx, data);
-	}
+    if (!r) {
+        // 如果MSR设置成功，则记录该操作。
+        trace_kvm_msr_write(ecx, data);
+    } else {
+        // 如果MSR设置失败，检查是否需要将此操作转发给用户空间处理。
+        if (kvm_msr_user_space(vcpu, ecx, KVM_EXIT_X86_WRMSR, data,
+                               complete_fast_msr_access, r))
+            return 0; // 如果需要用户空间介入，则返回0，表示需要用户空间处理。
+        // 如果r小于0，则将错误传递给用户空间。
+        if (r < 0)
+            return r;
+        // 如果设置MSR失败，记录失败的详细信息。
+        trace_kvm_msr_write_ex(ecx, data);
+    }
 
-	return static_call(kvm_x86_complete_emulated_msr)(vcpu, r);
+    // 调用静态函数指针，完成MSR操作的后续处理。如果操作成功完成，则返回0。
+    return static_call(kvm_x86_complete_emulated_msr)(vcpu, r);
 }
+
 EXPORT_SYMBOL_GPL(kvm_emulate_wrmsr);
 
 int kvm_emulate_as_nop(struct kvm_vcpu *vcpu)
