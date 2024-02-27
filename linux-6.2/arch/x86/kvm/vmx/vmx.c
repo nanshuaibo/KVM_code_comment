@@ -5262,24 +5262,25 @@ static int handle_triple_fault(struct kvm_vcpu *vcpu)
 
 static int handle_io(struct kvm_vcpu *vcpu)
 {
-	unsigned long exit_qualification;
-	int size, in, string;
-	unsigned port;
+    unsigned long exit_qualification; // 用于存储 VMX（虚拟机扩展）退出的限定信息
+    int size, in, string; // 定义用于处理 I/O 的变量
+    unsigned port; // 存储 I/O 操作的端口号
 
-	exit_qualification = vmx_get_exit_qual(vcpu);
-	string = (exit_qualification & 16) != 0;
+    exit_qualification = vmx_get_exit_qual(vcpu); // 获取 VMX 退出限定信息
+    string = (exit_qualification & 16) != 0; // 检查是否是字符串操作
 
-	++vcpu->stat.io_exits;
+    ++vcpu->stat.io_exits; // 增加 I/O 退出计数器
 
-	if (string)
-		return kvm_emulate_instruction(vcpu, 0);
+    if (string)
+        return kvm_emulate_instruction(vcpu, 0); // 如果是字符串操作，则调用虚拟机指令仿真
 
-	port = exit_qualification >> 16;
-	size = (exit_qualification & 7) + 1;
-	in = (exit_qualification & 8) != 0;
+    port = exit_qualification >> 16; // 获取端口号
+    size = (exit_qualification & 7) + 1; // 获取操作的数据大小
+    in = (exit_qualification & 8) != 0; // 检查是读取还是写入操作
 
-	return kvm_fast_pio(vcpu, size, port, in);
+    return kvm_fast_pio(vcpu, size, port, in); // 调用快速的 I/O 操作函数
 }
+
 
 static void
 vmx_patch_hypercall(struct kvm_vcpu *vcpu, unsigned char *hypercall)

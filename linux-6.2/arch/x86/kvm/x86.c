@@ -9003,7 +9003,7 @@ static int complete_fast_pio_in(struct kvm_vcpu *vcpu)
 	unsigned long val;
 
 	/* We should only ever be called with arch.pio.count equal to 1 */
-	BUG_ON(vcpu->arch.pio.count != 1);
+	BUG_ON(vcpu->arch.pio.count != 1); // 确保只有当 arch.pio.count 等于 1 时才会调用该函数
 
 	if (unlikely(!kvm_is_linear_rip(vcpu, vcpu->arch.pio.linear_rip))) {
 		vcpu->arch.pio.count = 0;
@@ -9011,13 +9011,14 @@ static int complete_fast_pio_in(struct kvm_vcpu *vcpu)
 	}
 
 	/* For size less than 4 we merge, else we zero extend */
-	val = (vcpu->arch.pio.size < 4) ? kvm_rax_read(vcpu) : 0;
+	val = (vcpu->arch.pio.size < 4) ? kvm_rax_read(vcpu) : 0; // 根据数据大小进行数据合并或零扩展
 
-	complete_emulator_pio_in(vcpu, &val);
-	kvm_rax_write(vcpu, val);
+	complete_emulator_pio_in(vcpu, &val); // 完成 PIO 输入模拟
+	kvm_rax_write(vcpu, val); // 将读取的值写入 RAX 寄存器
 
-	return kvm_skip_emulated_instruction(vcpu);
+	return kvm_skip_emulated_instruction(vcpu); // 跳过模拟的指令，继续执行下一条指令
 }
+
 
 static int kvm_fast_pio_in(struct kvm_vcpu *vcpu, int size,
 			   unsigned short port)
