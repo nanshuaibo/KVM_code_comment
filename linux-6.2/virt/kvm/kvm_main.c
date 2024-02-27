@@ -3918,7 +3918,7 @@ static void kvm_create_vcpu_debugfs(struct kvm_vcpu *vcpu)
 #endif
 
 /*
- * Creates some virtual cpus.  Good luck creating more than one.
+ * 创建虚拟CPU。。
  */
 static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 {
@@ -3926,15 +3926,18 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 	struct kvm_vcpu *vcpu;
 	struct page *page;
 
+	// 检查虚拟 CPU 的 ID 是否超出范围
 	if (id >= KVM_MAX_VCPU_IDS)
 		return -EINVAL;
 
 	mutex_lock(&kvm->lock);
+	// 检查是否已创建的虚拟 CPU 数量超过了最大虚拟 CPU 数量
 	if (kvm->created_vcpus >= kvm->max_vcpus) {
 		mutex_unlock(&kvm->lock);
 		return -EINVAL;
 	}
 
+	// 调用体系结构相关的预创建函数
 	r = kvm_arch_vcpu_precreate(kvm, id);
 	if (r) {
 		mutex_unlock(&kvm->lock);
@@ -3944,12 +3947,14 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 	kvm->created_vcpus++;
 	mutex_unlock(&kvm->lock);
 
+	// 为虚拟 CPU 分配内存
 	vcpu = kmem_cache_zalloc(kvm_vcpu_cache, GFP_KERNEL_ACCOUNT);
 	if (!vcpu) {
 		r = -ENOMEM;
 		goto vcpu_decrement;
 	}
 
+	// 分配用于保存虚拟 CPU 运行状态的内存页
 	BUILD_BUG_ON(sizeof(struct kvm_run) > PAGE_SIZE);
 	page = alloc_page(GFP_KERNEL_ACCOUNT | __GFP_ZERO);
 	if (!page) {
@@ -3958,12 +3963,15 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 	}
 	vcpu->run = page_address(page);
 
+	// 初始化虚拟 CPU
 	kvm_vcpu_init(vcpu, kvm, id);
 
+	// 创建虚拟 CPU
 	r = kvm_arch_vcpu_create(vcpu);
 	if (r)
 		goto vcpu_free_run_page;
 
+	// 分配脏页环
 	if (kvm->dirty_ring_size) {
 		r = kvm_dirty_ring_alloc(&vcpu->dirty_ring,
 					 id, kvm->dirty_ring_size);
@@ -3973,24 +3981,26 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 
 	mutex_lock(&kvm->lock);
 
-#ifdef CONFIG_LOCKDEP
-	/* Ensure that lockdep knows vcpu->mutex is taken *inside* kvm->lock */
+	#ifdef CONFIG_LOCKDEP
+	// 确保 lockdep 知道 vcpu->mutex 是在 kvm->lock 内部获取的
 	mutex_lock(&vcpu->mutex);
 	mutex_unlock(&vcpu->mutex);
-#endif
+	#endif
 
+	// 检查是否存在相同 ID 的虚拟 CPU
 	if (kvm_get_vcpu_by_id(kvm, id)) {
 		r = -EEXIST;
 		goto unlock_vcpu_destroy;
 	}
 
+	// 将虚拟 CPU 添加到 kvm->vcpu_array 中
 	vcpu->vcpu_idx = atomic_read(&kvm->online_vcpus);
 	r = xa_insert(&kvm->vcpu_array, vcpu->vcpu_idx, vcpu, GFP_KERNEL_ACCOUNT);
 	BUG_ON(r == -EBUSY);
 	if (r)
 		goto unlock_vcpu_destroy;
 
-	/* Now it's all set up, let userspace reach it */
+	// 现在一切都设置好了，让用户空间可以访问它
 	kvm_get_kvm(kvm);
 	r = create_vcpu_fd(vcpu);
 	if (r < 0) {
@@ -4000,8 +4010,8 @@ static int kvm_vm_ioctl_create_vcpu(struct kvm *kvm, u32 id)
 	}
 
 	/*
-	 * Pairs with smp_rmb() in kvm_get_vcpu.  Store the vcpu
-	 * pointer before kvm->online_vcpu's incremented value.
+	 * 与 kvm_get_vcpu 中的 smp_rmb() 配对。在 kvm->online_vcpu
+	 * 增加之前存储虚拟 CPU 指针。
 	 */
 	smp_wmb();
 	atomic_inc(&kvm->online_vcpus);
@@ -4026,6 +4036,7 @@ vcpu_decrement:
 	mutex_unlock(&kvm->lock);
 	return r;
 }
+
 
 static int kvm_vcpu_ioctl_set_sigmask(struct kvm_vcpu *vcpu, sigset_t *sigset)
 {
