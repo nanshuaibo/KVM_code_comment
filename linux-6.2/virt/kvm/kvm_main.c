@@ -2203,24 +2203,24 @@ static int kvm_get_dirty_log_protect(struct kvm *kvm, struct kvm_dirty_log *log)
 
 
 /**
- * kvm_vm_ioctl_get_dirty_log - get and clear the log of dirty pages in a slot
- * @kvm: kvm instance
- * @log: slot id and address to which we copy the log
+ * kvm_vm_ioctl_get_dirty_log - 获取并清除一个槽中的脏页日志
+ * @kvm: kvm实例
+ * @log: 槽id和我们复制日志的地址
  *
- * Steps 1-4 below provide general overview of dirty page logging. See
- * kvm_get_dirty_log_protect() function description for additional details.
+ * 下面的步骤1-4提供了脏页记录的一般概述。有关更多细节，请查看
+ * kvm_get_dirty_log_protect()函数的描述。
  *
- * We call kvm_get_dirty_log_protect() to handle steps 1-3, upon return we
- * always flush the TLB (step 4) even if previous step failed  and the dirty
- * bitmap may be corrupt. Regardless of previous outcome the KVM logging API
- * does not preclude user space subsequent dirty log read. Flushing TLB ensures
- * writes will be marked dirty for next log read.
+ * 我们调用kvm_get_dirty_log_protect()来处理步骤1-3，在返回时我们
+ * 总是刷新TLB（步骤4），即使前一步失败且脏位图可能已损坏。不管之前的结果如何，
+ * KVM日志API不会阻止用户空间后续读取脏日志。刷新TLB确保下一次日志读取时，写入
+ * 会被标记为脏。
  *
- *   1. Take a snapshot of the bit and clear it if needed.
- *   2. Write protect the corresponding page.
- *   3. Copy the snapshot to the userspace.
- *   4. Flush TLB's if needed.
+ *   1. 对位进行快照，并在需要时清除它。
+ *   2. 将对应的页面写保护。
+ *   3. 将快照复制到用户空间。
+ *   4. 如有需要，刷新TLB。
  */
+
 static int kvm_vm_ioctl_get_dirty_log(struct kvm *kvm,
 				      struct kvm_dirty_log *log)
 {
@@ -2252,39 +2252,58 @@ static int kvm_clear_dirty_log_protect(struct kvm *kvm,
 	unsigned long *dirty_bitmap_buffer;
 	bool flush;
 
-	/* Dirty ring tracking may be exclusive to dirty log tracking */
+	// 检查是否配置为使用脏位图，如果没有则返回错误
 	if (!kvm_use_dirty_bitmap(kvm))
 		return -ENXIO;
 
+	// 从log->slot中提取地址空间ID和槽位ID
 	as_id = log->slot >> 16;
 	id = (u16)log->slot;
+
+	// 验证地址空间ID和槽位ID是否在有效范围内
 	if (as_id >= KVM_ADDRESS_SPACE_NUM || id >= KVM_USER_MEM_SLOTS)
 		return -EINVAL;
 
+	// 检查log->first_page是否按64页面对齐，如果不是则返回错误
+	/* 如果 log->first_page 的二进制表示中最低6位中至少有一位是1，
+	 * 那么这个表达式的结果是非零值，这意味着 log->first_page 不是64的倍数，条件判断为真。
+	 * 如果 log->first_page 是64的倍数，那么它的二进制表示的最低6位将全为0，
+	 * log->first_page & 63 的结果为0，条件判断为假。
+	 * */
 	if (log->first_page & 63)
 		return -EINVAL;
 
+	// 获取对应地址空间ID的内存槽
 	slots = __kvm_memslots(kvm, as_id);
 	memslot = id_to_memslot(slots, id);
+
+	// 如果内存槽不存在或没有配置脏位图，则返回错误
 	if (!memslot || !memslot->dirty_bitmap)
 		return -ENOENT;
 
 	dirty_bitmap = memslot->dirty_bitmap;
 
+	// 计算需要从用户空间复制的位图大小，确保对齐
 	n = ALIGN(log->num_pages, BITS_PER_LONG) / 8;
 
+	// 验证请求的页面范围是否有效
 	if (log->first_page > memslot->npages ||
 	    log->num_pages > memslot->npages - log->first_page ||
 	    (log->num_pages < memslot->npages - log->first_page && (log->num_pages & 63)))
 	    return -EINVAL;
 
+	// 同步脏页日志
 	kvm_arch_sync_dirty_log(kvm, memslot);
 
+	// 默认不刷新
 	flush = false;
+	// 准备一个缓冲区用于从用户空间复制脏位图
 	dirty_bitmap_buffer = kvm_second_dirty_bitmap(memslot);
+	// 尝试从用户空间复制脏位图，如果失败则返回错误
 	if (copy_from_user(dirty_bitmap_buffer, log->dirty_bitmap, n))
 		return -EFAULT;
 
+	// 锁定KVM MMU，开始处理每个清除的脏位
 	KVM_MMU_LOCK(kvm);
 	for (offset = log->first_page, i = offset / BITS_PER_LONG,
 		 n = DIV_ROUND_UP(log->num_pages, BITS_PER_LONG); n--;
@@ -2294,14 +2313,10 @@ static int kvm_clear_dirty_log_protect(struct kvm *kvm,
 		if (!mask)
 			continue;
 
+		// 清除并检查哪些脏位被实际清除
 		mask &= atomic_long_fetch_andnot(mask, p);
 
-		/*
-		 * mask contains the bits that really have been cleared.  This
-		 * never includes any bits beyond the length of the memslot (if
-		 * the length is not aligned to 64 pages), therefore it is not
-		 * a problem if userspace sets them in log->dirty_bitmap.
-		*/
+		// 如果有脏位被清除，标记需要刷新并重新启用对应页面的脏页跟踪
 		if (mask) {
 			flush = true;
 			kvm_arch_mmu_enable_log_dirty_pt_masked(kvm, memslot,
@@ -2310,11 +2325,13 @@ static int kvm_clear_dirty_log_protect(struct kvm *kvm,
 	}
 	KVM_MMU_UNLOCK(kvm);
 
+	// 如果有脏位被清除，执行刷新操作
 	if (flush)
 		kvm_arch_flush_remote_tlbs_memslot(kvm, memslot);
 
 	return 0;
 }
+
 
 static int kvm_vm_ioctl_clear_dirty_log(struct kvm *kvm,
 					struct kvm_clear_dirty_log *log)
