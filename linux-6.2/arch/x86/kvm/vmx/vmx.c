@@ -4074,6 +4074,24 @@ static inline void kvm_vcpu_trigger_posted_interrupt(struct kvm_vcpu *vcpu,
 {
 #ifdef CONFIG_SMP
 	if (vcpu->mode == IN_GUEST_MODE) {
+	/*
+	 * 虚拟中断的向量已经在PIR中设置。
+	 * 发送通知事件以传递虚拟中断，除非虚拟CPU是当前运行的虚拟CPU，
+	 * 即事件是从快速路径VM-Exit处理程序发送的，在重新进入客户机之前，PIR将与vIRR同步。
+	 *
+	 * 当目标不是当前运行的虚拟CPU时，会出现以下可能性：
+	 *
+	 * 情况1：虚拟CPU保持在非根模式。发送通知事件将中断发送到虚拟CPU。
+	 *
+	 * 情况2：虚拟CPU退出到根模式但仍可运行。在重新进入客户机之前，PIR将与vIRR同步。
+	 * 发送通知事件是可以的，因为主机IRQ处理程序将忽略虚假事件。
+	 *
+	 * 情况3：虚拟CPU退出到根模式并且被阻塞。
+	 * vcpu_block()已经将PIR同步到vIRR，并且如果vIRR不为空，则永远不会阻塞虚拟CPU。
+	 * 因此，在这里被阻塞的虚拟CPU不会等待PIR中的任何请求中断，
+	 * 而发送通知事件也会导致一个良性的虚假事件。
+	 */
+
 		/*
 		 * The vector of the virtual has already been set in the PIR.
 		 * Send a notification event to deliver the virtual interrupt
@@ -4105,6 +4123,12 @@ static inline void kvm_vcpu_trigger_posted_interrupt(struct kvm_vcpu *vcpu,
 		return;
 	}
 #endif
+	/*
+	 * 虚拟CPU不在客户机中；唤醒虚拟CPU以防它被阻塞， 
+	 * 否则不做任何操作，
+	 * 因为KVM将通过在vcpu_enter_guest()中使用sync_pir_to_irr()来获取最高优先级的待处理中断。
+	 */
+
 	/*
 	 * The vCPU isn't in the guest; wake the vCPU in case it is blocking,
 	 * otherwise do nothing as KVM will grab the highest priority pending
@@ -4146,11 +4170,11 @@ static int vmx_deliver_nested_posted_interrupt(struct kvm_vcpu *vcpu,
 	return -1;
 }
 /*
- * Send interrupt to vcpu via posted interrupt way.
- * 1. If target vcpu is running(non-root mode), send posted interrupt
- * notification to vcpu and hardware will sync PIR to vIRR atomically.
- * 2. If target vcpu isn't running(root mode), kick it to pick up the
- * interrupt from PIR in next vmentry.
+ * 通过已发送中断的方式向虚拟CPU发送中断。
+ * 如果目标虚拟CPU正在运行（非根模式），则向虚拟CPU发送已发送中断通知，
+ * 硬件将自动将已发送中断寄存器（PIR）同步到虚拟中断请求寄存器（vIRR）。
+ * 如果目标虚拟CPU未运行（根模式），
+ * 则唤醒它以在下一个虚拟化进入时从PIR中接收中断。
  */
 static int vmx_deliver_posted_interrupt(struct kvm_vcpu *vcpu, int vector)
 {
@@ -4178,7 +4202,7 @@ static int vmx_deliver_posted_interrupt(struct kvm_vcpu *vcpu, int vector)
 	 * guaranteed to see PID.ON=1 and sync the PIR to IRR if triggering a
 	 * posted interrupt "fails" because vcpu->mode != IN_GUEST_MODE.
 	 */
-	kvm_vcpu_trigger_posted_interrupt(vcpu, POSTED_INTR_VECTOR);
+	kvm_vcpu_trigger_posted_interrupt(vcpu, POSTED_INTR_VECTOR); //发生核间中断
 	return 0;
 }
 
