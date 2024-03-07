@@ -10283,6 +10283,7 @@ EXPORT_SYMBOL_GPL(__kvm_request_immediate_exit);
  * Returns 1 to let vcpu_run() continue the guest execution loop without
  * exiting to the userspace.  Otherwise, the value will be returned to the
  * userspace.
+ * 返回1继续循环，否则退出到qemu
  */
 static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 {
