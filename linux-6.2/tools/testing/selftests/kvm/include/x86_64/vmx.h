@@ -296,15 +296,17 @@ struct vmx_msr_entry {
 
 static inline int vmxon(uint64_t phys)
 {
-	uint8_t ret;
+    uint8_t ret; // 声明一个8位整数变量ret，用于存储指令执行结果
 
-	__asm__ __volatile__ ("vmxon %[pa]; setna %[ret]"
-		: [ret]"=rm"(ret)
-		: [pa]"m"(phys)
-		: "cc", "memory");
+    // 使用内联汇编执行VMXON指令，并将结果存储在ret变量中
+    __asm__ __volatile__ ("vmxon %[pa]; setna %[ret]"
+        : [ret]"=rm"(ret)  // 使用ret变量接收结果，并指定了输出约束 "=rm"
+        : [pa]"m"(phys)    // 使用phys变量作为VMXON指令的操作数，并指定了输入约束 "m"
+        : "cc", "memory"); // 声明了对标志寄存器（cc）和内存（memory）的依赖
 
-	return ret;
+    return ret; // 返回VMXON指令执行的结果
 }
+
 
 static inline void vmxoff(void)
 {
