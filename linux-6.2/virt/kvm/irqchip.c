@@ -61,11 +61,17 @@ int kvm_send_userspace_msi(struct kvm *kvm, struct kvm_msi *msi)
 	return kvm_set_msi(&route, kvm, KVM_USERSPACE_IRQ_SOURCE_ID, 1, false);
 }
 
-/*
+/* kvm_set_irq - 设置或清除 KVM 虚拟机中的一个中断
+ * @kvm: 指向当前 KVM 实例的指针
+ * @irq_source_id: 中断源的标识符，用于区分不同的中断源
+ * @irq: 要操作的中断号
+ * @level: 指定中断的电平，通常 1 表示触发中断，0 表示清除中断
+ * @line_status: 指定中断线路的当前状态
+ *
  * Return value:
- *  < 0   Interrupt was ignored (masked or not delivered for other reasons)
- *  = 0   Interrupt was coalesced (previous irq is still pending)
- *  > 0   Number of CPUs interrupt was delivered to
+ *  < 0   中断被忽略（被屏蔽或其他原因未被送达）
+ *  = 0   中断被合并（之前的中断仍在等待处理）
+ *  > 0   中断成功送达的 CPU 数量
  */
 int kvm_set_irq(struct kvm *kvm, int irq_source_id, u32 irq, int level,
 		bool line_status)
