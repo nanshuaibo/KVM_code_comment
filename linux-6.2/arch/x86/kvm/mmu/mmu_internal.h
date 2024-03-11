@@ -202,12 +202,14 @@ struct kvm_page_fault {
 	/*
 	 * Maximum page size that can be created for this fault; input to
 	 * FNAME(fetch), __direct_map and kvm_tdp_mmu_map.
+	 * 可以创建的最大页面大小；作为FNAME(fetch)、__direct_map和kvm_tdp_mmu_map的输入。
 	 */
 	u8 max_level; //最大的页表级别
 
 	/*
 	 * Page size that can be created based on the max_level and the
 	 * page size used by the host mapping.
+	 * 基于最大级别和宿主映射所使用的页面大小，可以创建的页面大小。
 	 */
 	u8 req_level; //请求创建的页表级别
 

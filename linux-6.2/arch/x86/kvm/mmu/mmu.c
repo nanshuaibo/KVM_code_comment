@@ -4307,8 +4307,8 @@ static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 	unsigned long mmu_seq;
 	int r;
 
-	fault->gfn = fault->addr >> PAGE_SHIFT;
-	fault->slot = kvm_vcpu_gfn_to_memslot(vcpu, fault->gfn);
+	fault->gfn = fault->addr >> PAGE_SHIFT; //计算gfn
+	fault->slot = kvm_vcpu_gfn_to_memslot(vcpu, fault->gfn); //根据gfn计算slot
 
 	if (page_fault_handle_page_track(vcpu, fault))
 		return RET_PF_EMULATE;
@@ -4342,13 +4342,14 @@ static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 	if (is_page_fault_stale(vcpu, fault, mmu_seq))
 		goto out_unlock;
 
+	//完成gpa->hpa的映射
 	if (is_tdp_mmu_fault) {
-		r = kvm_tdp_mmu_map(vcpu, fault);
+		r = kvm_tdp_mmu_map(vcpu, fault); //针对tdp模式的mmu进行优化，默认的tdp模式mmu
 	} else {
 		r = make_mmu_pages_available(vcpu);
 		if (r)
 			goto out_unlock;
-		r = __direct_map(vcpu, fault);
+		r = __direct_map(vcpu, fault);  //基于影子页表机制框架
 	}
 
 out_unlock:

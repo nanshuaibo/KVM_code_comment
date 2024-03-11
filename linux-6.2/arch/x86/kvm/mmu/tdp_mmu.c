@@ -1154,88 +1154,97 @@ static int tdp_mmu_split_huge_page(struct kvm *kvm, struct tdp_iter *iter,
 /*
  * Handle a TDP page fault (NPT/EPT violation/misconfiguration) by installing
  * page tables and SPTEs to translate the faulting guest physical address.
+ * 处理一个TDP页面错误（NPT/EPT违规/配置错误）,
+ * 通过安装页表和SPTEs来转换引起错误的宾客物理地址。
  */
+// 尝试映射一个TDP页面错误。
 int kvm_tdp_mmu_map(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 {
-	struct kvm_mmu *mmu = vcpu->arch.mmu;
-	struct kvm *kvm = vcpu->kvm;
-	struct tdp_iter iter;
-	struct kvm_mmu_page *sp;
-	int ret = RET_PF_RETRY;
+    // 获取虚拟CPU的MMU和KVM实例。
+    struct kvm_mmu *mmu = vcpu->arch.mmu;
+    struct kvm *kvm = vcpu->kvm;
+    struct tdp_iter iter; // TDP迭代器。
+    struct kvm_mmu_page *sp; // MMU页面。
+    int ret = RET_PF_RETRY; // 默认返回值，表示需要重试。
 
-	kvm_mmu_hugepage_adjust(vcpu, fault);
+    // 调整巨页映射。
+    kvm_mmu_hugepage_adjust(vcpu, fault);
 
-	trace_kvm_mmu_spte_requested(fault);
+    // 记录请求的SPTE。
+    trace_kvm_mmu_spte_requested(fault);
 
-	rcu_read_lock();
+    rcu_read_lock(); // 开始RCU保护区。
 
-	tdp_mmu_for_each_pte(iter, mmu, fault->gfn, fault->gfn + 1) {
-		int r;
+    // 遍历页表项。
+    tdp_mmu_for_each_pte(iter, mmu, fault->gfn, fault->gfn + 1) {
+        int r;
 
-		if (fault->nx_huge_page_workaround_enabled)
-			disallowed_hugepage_adjust(fault, iter.old_spte, iter.level);
+        // 如果启用了NX巨页解决方案，则调整之。
+        if (fault->nx_huge_page_workaround_enabled)
+            disallowed_hugepage_adjust(fault, iter.old_spte, iter.level);
 
-		/*
-		 * If SPTE has been frozen by another thread, just give up and
-		 * retry, avoiding unnecessary page table allocation and free.
-		 */
-		if (is_removed_spte(iter.old_spte))
-			goto retry;
+        /*
+         * 如果SPTE被另一个线程冻结，则放弃并重试，避免不必要的页面表分配和释放。
+         */
+        if (is_removed_spte(iter.old_spte))
+            goto retry;
 
-		if (iter.level == fault->goal_level)
-			goto map_target_level;
+        // 如果达到目标级别，则进行映射。
+        if (iter.level == fault->goal_level)
+            goto map_target_level;
 
-		/* Step down into the lower level page table if it exists. */
-		if (is_shadow_present_pte(iter.old_spte) &&
-		    !is_large_pte(iter.old_spte))
-			continue;
+        // 如果存在更低级别的页表，则继续深入。
+        if (is_shadow_present_pte(iter.old_spte) &&
+            !is_large_pte(iter.old_spte))
+            continue;
 
-		/*
-		 * The SPTE is either non-present or points to a huge page that
-		 * needs to be split.
-		 */
-		sp = tdp_mmu_alloc_sp(vcpu);
-		tdp_mmu_init_child_sp(sp, &iter);
+        /*
+         * SPTE要么不存在，要么指向需要被拆分的巨页。
+         */
+        sp = tdp_mmu_alloc_sp(vcpu); // 分配MMU页面。
+        tdp_mmu_init_child_sp(sp, &iter); // 初始化子级页面。
 
-		sp->nx_huge_page_disallowed = fault->huge_page_disallowed;
+        sp->nx_huge_page_disallowed = fault->huge_page_disallowed;
 
-		if (is_shadow_present_pte(iter.old_spte))
-			r = tdp_mmu_split_huge_page(kvm, &iter, sp, true);
-		else
-			r = tdp_mmu_link_sp(kvm, &iter, sp, true);
+        // 根据SPTE的状态，分裂巨页或链接SP。
+        if (is_shadow_present_pte(iter.old_spte))
+            r = tdp_mmu_split_huge_page(kvm, &iter, sp, true);
+        else
+            r = tdp_mmu_link_sp(kvm, &iter, sp, true);
 
-		/*
-		 * Force the guest to retry if installing an upper level SPTE
-		 * failed, e.g. because a different task modified the SPTE.
-		 */
-		if (r) {
-			tdp_mmu_free_sp(sp);
-			goto retry;
-		}
+        /*
+         * 如果安装上层SPTE失败（例如，由于不同任务修改了SPTE），则强制客户重试。
+         */
+        if (r) {
+            tdp_mmu_free_sp(sp); // 释放SP。
+            goto retry;
+        }
 
-		if (fault->huge_page_disallowed &&
-		    fault->req_level >= iter.level) {
-			spin_lock(&kvm->arch.tdp_mmu_pages_lock);
-			if (sp->nx_huge_page_disallowed)
-				track_possible_nx_huge_page(kvm, sp);
-			spin_unlock(&kvm->arch.tdp_mmu_pages_lock);
-		}
-	}
+        // 处理可能的NX巨页。
+        if (fault->huge_page_disallowed &&
+            fault->req_level >= iter.level) {
+            spin_lock(&kvm->arch.tdp_mmu_pages_lock);
+            if (sp->nx_huge_page_disallowed)
+                track_possible_nx_huge_page(kvm, sp);
+            spin_unlock(&kvm->arch.tdp_mmu_pages_lock);
+        }
+    }
 
-	/*
-	 * The walk aborted before reaching the target level, e.g. because the
-	 * iterator detected an upper level SPTE was frozen during traversal.
-	 */
-	WARN_ON_ONCE(iter.level == fault->goal_level);
-	goto retry;
+    /*
+     * 如果在到达目标级别之前遍历被中断（例如，迭代器在遍历过程中检测到上层SPTE被冻结）。
+     */
+    WARN_ON_ONCE(iter.level == fault->goal_level);
+    goto retry;
 
 map_target_level:
-	ret = tdp_mmu_map_handle_target_level(vcpu, fault, &iter);
+    // 处理目标级别的映射。
+    ret = tdp_mmu_map_handle_target_level(vcpu, fault, &iter);
 
 retry:
-	rcu_read_unlock();
-	return ret;
+    rcu_read_unlock(); // 结束RCU保护区。
+    return ret; // 返回结果。
 }
+
 
 bool kvm_tdp_mmu_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range,
 				 bool flush)

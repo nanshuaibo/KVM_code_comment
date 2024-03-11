@@ -2353,38 +2353,44 @@ struct kvm_memory_slot *gfn_to_memslot(struct kvm *kvm, gfn_t gfn)
 }
 EXPORT_SYMBOL_GPL(gfn_to_memslot);
 
+// 根据vCPU和宾客框架号（GFN）来查找对应的内存槽。
 struct kvm_memory_slot *kvm_vcpu_gfn_to_memslot(struct kvm_vcpu *vcpu, gfn_t gfn)
 {
-	struct kvm_memslots *slots = kvm_vcpu_memslots(vcpu);
-	u64 gen = slots->generation;
-	struct kvm_memory_slot *slot;
+    // 获取虚拟CPU当前使用的内存槽的集合。
+    struct kvm_memslots *slots = kvm_vcpu_memslots(vcpu);
+    // 获取这些内存槽的版本号。
+    u64 gen = slots->generation;
+    struct kvm_memory_slot *slot;
 
-	/*
-	 * This also protects against using a memslot from a different address space,
-	 * since different address spaces have different generation numbers.
-	 */
-	if (unlikely(gen != vcpu->last_used_slot_gen)) {
-		vcpu->last_used_slot = NULL;
-		vcpu->last_used_slot_gen = gen;
-	}
+    /*
+     * 这也用于防止使用来自不同地址空间的内存槽，
+     * 因为不同的地址空间有不同的版本号。
+     */
+    if (unlikely(gen != vcpu->last_used_slot_gen)) {
+        vcpu->last_used_slot = NULL;
+        vcpu->last_used_slot_gen = gen;
+    }
 
-	slot = try_get_memslot(vcpu->last_used_slot, gfn);
-	if (slot)
-		return slot;
+    // 尝试获取上一次使用的内存槽，如果它依然有效且包含了所需的GFN，则直接返回这个槽。
+    slot = try_get_memslot(vcpu->last_used_slot, gfn);
+    if (slot)
+        return slot;
 
-	/*
-	 * Fall back to searching all memslots. We purposely use
-	 * search_memslots() instead of __gfn_to_memslot() to avoid
-	 * thrashing the VM-wide last_used_slot in kvm_memslots.
-	 */
-	slot = search_memslots(slots, gfn, false);
-	if (slot) {
-		vcpu->last_used_slot = slot;
-		return slot;
-	}
+    /*
+     * 如果上一步未能找到有效的内存槽，则退回到搜索所有内存槽的方式。
+     * 故意使用search_memslots()而不是__gfn_to_memslot()来避免
+     * 在kvm_memslots中频繁更换VM级别的last_used_slot。
+     */
+    slot = search_memslots(slots, gfn, false);
+    if (slot) {
+        vcpu->last_used_slot = slot;
+        return slot;
+    }
 
-	return NULL;
+    // 如果没有找到匹配的内存槽，则返回NULL。
+    return NULL;
 }
+
 
 bool kvm_is_visible_gfn(struct kvm *kvm, gfn_t gfn)
 {

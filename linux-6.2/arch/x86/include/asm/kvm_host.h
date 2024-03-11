@@ -431,55 +431,64 @@ struct kvm_page_fault;
  * x86 supports 4 paging modes (5-level 64-bit, 4-level 64-bit, 3-level 32-bit,
  * and 2-level 32-bit).  The kvm_mmu structure abstracts the details of the
  * current mmu mode.
+ * x86支持四种分页模式（5级64位、4级64位、3级32位和2级32位）。
+ * kvm_mmu结构体抽象了当前MMU模式的细节。
  */
 struct kvm_mmu {
-	unsigned long (*get_guest_pgd)(struct kvm_vcpu *vcpu);
-	u64 (*get_pdptr)(struct kvm_vcpu *vcpu, int index);
-	int (*page_fault)(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault);
-	void (*inject_page_fault)(struct kvm_vcpu *vcpu,
-				  struct x86_exception *fault);
-	gpa_t (*gva_to_gpa)(struct kvm_vcpu *vcpu, struct kvm_mmu *mmu,
-			    gpa_t gva_or_gpa, u64 access,
-			    struct x86_exception *exception);
-	int (*sync_page)(struct kvm_vcpu *vcpu,
-			 struct kvm_mmu_page *sp);
-	void (*invlpg)(struct kvm_vcpu *vcpu, gva_t gva, hpa_t root_hpa);
-	struct kvm_mmu_root_info root;
-	union kvm_cpu_role cpu_role;
-	union kvm_mmu_page_role root_role;
+    /* 获取客户机的页目录基址。 */
+    unsigned long (*get_guest_pgd)(struct kvm_vcpu *vcpu);
 
-	/*
-	* The pkru_mask indicates if protection key checks are needed.  It
-	* consists of 16 domains indexed by page fault error code bits [4:1],
-	* with PFEC.RSVD replaced by ACC_USER_MASK from the page tables.
-	* Each domain has 2 bits which are ANDed with AD and WD from PKRU.
-	*/
-	u32 pkru_mask;
+    /* 获取页目录指针表中指定索引项的值。 */
+    u64 (*get_pdptr)(struct kvm_vcpu *vcpu, int index);
 
-	struct kvm_mmu_root_info prev_roots[KVM_MMU_NUM_PREV_ROOTS];
+    /* 处理页错误。 */
+    int (*page_fault)(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault);
 
-	/*
-	 * Bitmap; bit set = permission fault
-	 * Byte index: page fault error code [4:1]
-	 * Bit index: pte permissions in ACC_* format
-	 */
-	u8 permissions[16];
+    /* 向客户机注入页错误。 */
+    void (*inject_page_fault)(struct kvm_vcpu *vcpu, struct x86_exception *fault);
 
-	u64 *pae_root;
-	u64 *pml4_root;
-	u64 *pml5_root;
+    /* 将虚拟地址转换为物理地址。 */
+    gpa_t (*gva_to_gpa)(struct kvm_vcpu *vcpu, struct kvm_mmu *mmu, gpa_t gva_or_gpa, u64 access, struct x86_exception *exception);
 
-	/*
-	 * check zero bits on shadow page table entries, these
-	 * bits include not only hardware reserved bits but also
-	 * the bits spte never used.
-	 */
-	struct rsvd_bits_validate shadow_zero_check;
+    /* 同步页表。 */
+    int (*sync_page)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp);
 
-	struct rsvd_bits_validate guest_rsvd_check;
+    /* 处理特定虚拟地址的TLB失效。 */
+    void (*invlpg)(struct kvm_vcpu *vcpu, gva_t gva, hpa_t root_hpa);
 
-	u64 pdptrs[4]; /* pae */
+    /* 根页表信息。 */
+    struct kvm_mmu_root_info root;
+
+    /* CPU角色信息，决定了分页模式。 */
+    union kvm_cpu_role cpu_role;
+
+    /* 根页角色信息。 */
+    union kvm_mmu_page_role root_role;
+
+    /* PKRU掩码，指示是否需要进行保护键检查。 */
+    u32 pkru_mask;
+
+    /* 之前的根页表信息。 */
+    struct kvm_mmu_root_info prev_roots[KVM_MMU_NUM_PREV_ROOTS];
+
+    /* 权限位图，用于指示权限错误。 */
+    u8 permissions[16];
+
+    /* 页表根指针。 */
+    u64 *pae_root;
+    u64 *pml4_root;
+    u64 *pml5_root;
+
+    /* 检查阴影页表项的零位。 */
+    struct rsvd_bits_validate shadow_zero_check;
+
+    /* 检查客户机保留位。 */
+    struct rsvd_bits_validate guest_rsvd_check;
+
+    /* PAE模式下的页目录指针。 */
+    u64 pdptrs[4];
 };
+
 
 struct kvm_tlb_range {
 	u64 start_gfn;
