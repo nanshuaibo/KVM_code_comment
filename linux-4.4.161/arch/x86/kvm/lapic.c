@@ -656,35 +656,46 @@ static u32 kvm_apic_mda(unsigned int dest_id, struct kvm_lapic *source,
 	return x2apic_mda ? dest_id : SET_APIC_DEST_FIELD(dest_id);
 }
 
+/* 判断一个 APIC 消息是否应该被发送到指定的虚拟CPU（vCPU） */
 bool kvm_apic_match_dest(struct kvm_vcpu *vcpu, struct kvm_lapic *source,
 			   int short_hand, unsigned int dest, int dest_mode)
 {
+    /* 目标 vCPU 的本地APIC */
 	struct kvm_lapic *target = vcpu->arch.apic;
+    /* 计算消息的目的地地址 */
 	u32 mda = kvm_apic_mda(dest, source, target);
 
+    /* 调试信息输出，显示目标、源、目的地、目的地模式和简写类型 */
 	apic_debug("target %p, source %p, dest 0x%x, "
 		   "dest_mode 0x%x, short_hand 0x%x\n",
 		   target, source, dest, dest_mode, short_hand);
 
+    /* 确保目标APIC存在 */
 	ASSERT(target);
 	switch (short_hand) {
+    /* 没有简写，直接根据dest_mode判断是物理地址匹配还是逻辑地址匹配 */
 	case APIC_DEST_NOSHORT:
 		if (dest_mode == APIC_DEST_PHYSICAL)
 			return kvm_apic_match_physical_addr(target, mda);
 		else
 			return kvm_apic_match_logical_addr(target, mda);
+    /* 如果简写指示消息只发给自己，检查target是否就是source */
 	case APIC_DEST_SELF:
 		return target == source;
+    /* 简写表示消息发送给所有包括源在内的处理器 */
 	case APIC_DEST_ALLINC:
 		return true;
+    /* 简写表示消息发送给除了源之外的所有处理器 */
 	case APIC_DEST_ALLBUT:
 		return target != source;
 	default:
+        /* 对于无效的简写类型，输出调试信息并返回false */
 		apic_debug("kvm: apic: Bad dest shorthand value %x\n",
 			   short_hand);
 		return false;
 	}
 }
+
 
 bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
 		struct kvm_lapic_irq *irq, int *r, unsigned long *dest_map)
