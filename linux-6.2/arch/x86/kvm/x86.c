@@ -10051,7 +10051,7 @@ static int kvm_check_and_inject_events(struct kvm_vcpu *vcpu,
 			goto out;
 		if (r) {
 			kvm_queue_interrupt(vcpu, kvm_cpu_get_interrupt(vcpu), false);
-			static_call(kvm_x86_inject_irq)(vcpu, false);
+			static_call(kvm_x86_inject_irq)(vcpu, false); //没有启用apicv硬件辅助虚拟化，会调用vmx_inject_irq软件模拟
 			WARN_ON(static_call(kvm_x86_interrupt_allowed)(vcpu, true) < 0);
 		}
 		if (kvm_cpu_has_injectable_intr(vcpu))
@@ -11651,8 +11651,8 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 		 * is guaranteed to run with a deterministic value, the request
 		 * will ensure the vCPU gets the correct state before VM-Entry.
 		 */
-		if (enable_apicv) {
-			vcpu->arch.apic->apicv_active = true;
+		if (enable_apicv) { //
+			vcpu->arch.apic->apicv_active = true; //启用apicv硬件虚拟化
 			kvm_make_request(KVM_REQ_APICV_UPDATE, vcpu);
 		}
 	} else

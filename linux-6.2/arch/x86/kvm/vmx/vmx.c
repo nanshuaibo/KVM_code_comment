@@ -4186,14 +4186,15 @@ static int vmx_deliver_posted_interrupt(struct kvm_vcpu *vcpu, int vector)
 		return 0;
 
 	/* Note, this is called iff the local APIC is in-kernel. */
-	if (!vcpu->arch.apic->apicv_active)
+	if (!vcpu->arch.apic->apicv_active)  //启用apic硬件辅助虚拟化
 		return -1;
 
-	if (pi_test_and_set_pir(vector, &vmx->pi_desc))
+	if (pi_test_and_set_pir(vector, &vmx->pi_desc)) //当前posted-interrupt desctiptor 是否已经存在当前中断向量
 		return 0;
 
 	/* If a previous notification has sent the IPI, nothing to do.  */
-	if (pi_test_and_set_on(&vmx->pi_desc))
+	if (pi_test_and_set_on(&vmx->pi_desc)) //pi_test_and_set_on返回0表示pi_desc中没有未处理的中断向量号
+		//返回1会向目标vcpu发送一个kvm_req_event请求
 		return 0;
 
 	/*
@@ -4202,7 +4203,7 @@ static int vmx_deliver_posted_interrupt(struct kvm_vcpu *vcpu, int vector)
 	 * guaranteed to see PID.ON=1 and sync the PIR to IRR if triggering a
 	 * posted interrupt "fails" because vcpu->mode != IN_GUEST_MODE.
 	 */
-	kvm_vcpu_trigger_posted_interrupt(vcpu, POSTED_INTR_VECTOR); //发生核间中断
+	kvm_vcpu_trigger_posted_interrupt(vcpu, POSTED_INTR_VECTOR); //注入posted-interrupted中断
 	return 0;
 }
 
@@ -6727,7 +6728,7 @@ static void vmx_set_rvi(int vector)
 	if (vector == -1)
 		vector = 0;
 
-	status = vmcs_read16(GUEST_INTR_STATUS);
+	status = vmcs_read16(GUEST_INTR_STATUS); //将中断向量信息写入vmcs的GUEST_INTR_STATUS
 	old = (u8)status & 0xff;
 	if ((u8)vector != old) {
 		status &= ~0xff;
@@ -6747,7 +6748,7 @@ static void vmx_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
 	 * interrupt. Therefore, do nothing when running L2.
 	 */
 	if (!is_guest_mode(vcpu))
-		vmx_set_rvi(max_irr);
+		vmx_set_rvi(max_irr);//将中断向量信息写入vmcs的GUEST_INTR_STATUS
 }
 
 static int vmx_sync_pir_to_irr(struct kvm_vcpu *vcpu)
@@ -6767,9 +6768,9 @@ static int vmx_sync_pir_to_irr(struct kvm_vcpu *vcpu)
 		 */
 		smp_mb__after_atomic();
 		got_posted_interrupt =
-			kvm_apic_update_irr(vcpu, vmx->pi_desc.pir, &max_irr);
+			kvm_apic_update_irr(vcpu, vmx->pi_desc.pir, &max_irr); //将pi_desc中的pir同步到apic—>regs寄存器中
 	} else {
-		max_irr = kvm_lapic_find_highest_irr(vcpu);
+		max_irr = kvm_lapic_find_highest_irr(vcpu); //返回当前最大的中断请求向量号
 		got_posted_interrupt = false;
 	}
 

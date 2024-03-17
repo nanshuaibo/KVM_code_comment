@@ -221,7 +221,7 @@ static inline int apic_x2apic_mode(struct kvm_lapic *apic)
 
 static inline bool kvm_vcpu_apicv_active(struct kvm_vcpu *vcpu)
 {
-	return lapic_in_kernel(vcpu) && vcpu->arch.apic->apicv_active;
+	return lapic_in_kernel(vcpu) && vcpu->arch.apic->apicv_active; //apicv硬件辅助虚拟化
 }
 
 static inline bool kvm_apic_has_pending_init_or_sipi(struct kvm_vcpu *vcpu)
