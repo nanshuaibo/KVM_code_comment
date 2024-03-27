@@ -5624,24 +5624,31 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 	u16 tss_selector;
 	int reason, type, idt_v, idt_index;
 
+	// 解析中断向量信息
 	idt_v = (vmx->idt_vectoring_info & VECTORING_INFO_VALID_MASK);
 	idt_index = (vmx->idt_vectoring_info & VECTORING_INFO_VECTOR_MASK);
 	type = (vmx->idt_vectoring_info & VECTORING_INFO_TYPE_MASK);
 
+	//从vmcs中获取退出信息
 	exit_qualification = vmx_get_exit_qual(vcpu);
 
+	//获取任务切换原因
 	reason = (u32)exit_qualification >> 30;
+	// 如果任务切换的原因是门中断（TASK_SWITCH_GATE）
 	if (reason == TASK_SWITCH_GATE && idt_v) {
 		switch (type) {
 		case INTR_TYPE_NMI_INTR:
+			// 如果是非屏蔽中断，取消 NMI 的屏蔽并清除 NMI 注入状态
 			vcpu->arch.nmi_injected = false;
 			vmx_set_nmi_mask(vcpu, true);
 			break;
 		case INTR_TYPE_EXT_INTR:
 		case INTR_TYPE_SOFT_INTR:
+			// 如果是外部中断或软中断，清除vCPU 的中断队列
 			kvm_clear_interrupt_queue(vcpu);
 			break;
 		case INTR_TYPE_HARD_EXCEPTION:
+			//如果是硬件异常，根据异常信息判断是否有错误码，并清除异常队列
 			if (vmx->idt_vectoring_info &
 			    VECTORING_INFO_DELIVER_CODE_MASK) {
 				has_error_code = true;
@@ -5656,8 +5663,11 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 			break;
 		}
 	}
+	// 获取任务切换时的 TSS 选择子
 	tss_selector = exit_qualification;
 
+	// 如果中断向量信息无效，或者中断类型不是硬件异常、外部中断或非屏蔽中断
+	// 则发出警告
 	if (!idt_v || (type != INTR_TYPE_HARD_EXCEPTION &&
 		       type != INTR_TYPE_EXT_INTR &&
 		       type != INTR_TYPE_NMI_INTR))
@@ -5934,13 +5944,13 @@ static fastpath_t handle_fastpath_preemption_timer(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 
-	if (!vmx->req_immediate_exit &&
-	    !unlikely(vmx->loaded_vmcs->hv_timer_soft_disabled)) {
+	if (!vmx->req_immediate_exit /*不需要立即退出*/&&
+	    !unlikely(vmx->loaded_vmcs->hv_timer_soft_disabled)/*硬件计时器没有被软件禁用*/) {
 		kvm_lapic_expired_hv_timer(vcpu);
-		return EXIT_FASTPATH_REENTER_GUEST;
+		return EXIT_FASTPATH_REENTER_GUEST;//重新进入guest
 	}
 
-	return EXIT_FASTPATH_NONE;
+	return EXIT_FASTPATH_NONE; //不需要进行额外处理
 }
 
 static int handle_preemption_timer(struct kvm_vcpu *vcpu)
@@ -6063,7 +6073,7 @@ static int (*kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
 	[EXIT_REASON_PML_FULL]		      = handle_pml_full, //PML Buffer满
 	[EXIT_REASON_INVPCID]                 = handle_invpcid,
 	[EXIT_REASON_VMFUNC]		      = handle_vmx_instruction,
-	[EXIT_REASON_PREEMPTION_TIMER]	      = handle_preemption_timer,
+	[EXIT_REASON_PREEMPTION_TIMER]	      = handle_preemption_timer, //预占时定时器
 	[EXIT_REASON_ENCLS]		      = handle_encls,
 	[EXIT_REASON_BUS_LOCK]                = handle_bus_lock_vmexit,
 	[EXIT_REASON_NOTIFY]		      = handle_notify,
@@ -7918,35 +7928,36 @@ static int vmx_set_hv_timer(struct kvm_vcpu *vcpu, u64 guest_deadline_tsc,
 	u64 tscl, guest_tscl, delta_tsc, lapic_timer_advance_cycles;
 	struct kvm_timer *ktimer = &vcpu->arch.apic->lapic_timer;
 
-	vmx = to_vmx(vcpu);
-	tscl = rdtsc();
-	guest_tscl = kvm_read_l1_tsc(vcpu, tscl);
-	delta_tsc = max(guest_deadline_tsc, guest_tscl) - guest_tscl;
+	vmx = to_vmx(vcpu); //调用container_of宏，根据kvm_vcpu获取vcpu_vmx
+	tscl = rdtsc(); //获取host的时钟周期
+	guest_tscl = kvm_read_l1_tsc(vcpu, tscl); //获取guest的时钟周期
+	delta_tsc = max(guest_deadline_tsc, guest_tscl) - guest_tscl; //获取时钟周期的延时
 	lapic_timer_advance_cycles = nsec_to_cycles(vcpu,
-						    ktimer->timer_advance_ns);
+						    ktimer->timer_advance_ns); //将定时器到期时间转换成时钟周期数
 
+	// 如果时间戳差值大于 LAPIC 定时器提前触发的周期数，则减去该周期数
 	if (delta_tsc > lapic_timer_advance_cycles)
 		delta_tsc -= lapic_timer_advance_cycles;
 	else
 		delta_tsc = 0;
 
-	/* Convert to host delta tsc if tsc scaling is enabled */
+	//如果guest的 TSC 缩放比例不等于 KVM 默认的 TSC 缩放比例，并且当前的时间差 delta_tsc 不为零，那么表示需要对 TSC 进行缩放。
 	if (vcpu->arch.l1_tsc_scaling_ratio != kvm_caps.default_tsc_scaling_ratio &&
-	    delta_tsc && u64_shl_div_u64(delta_tsc,
+	    delta_tsc && u64_shl_div_u64(delta_tsc, //使用 u64_shl_div_u64 函数对 delta_tsc 进行缩放操作，将其缩放到一级客户机的 TSC 缩放比例
 				kvm_caps.tsc_scaling_ratio_frac_bits,
 				vcpu->arch.l1_tsc_scaling_ratio, &delta_tsc))
 		return -ERANGE;
 
 	/*
-	 * If the delta tsc can't fit in the 32 bit after the multi shift,
-	 * we can't use the preemption timer.
-	 * It's possible that it fits on later vmentries, but checking
-	 * on every vmentry is costly so we just use an hrtimer.
+	 * 如果时间戳差值右移 (cpu_preemption_timer_multi + 32) 位后仍大于 0，
+	 * 则无法使用 HV 定时器，返回错误。
 	 */
 	if (delta_tsc >> (cpu_preemption_timer_multi + 32))
 		return -ERANGE;
 
+	// 设置 HV 定时器的过期时间
 	vmx->hv_deadline_tsc = tscl + delta_tsc;
+	// 标记是否已过期
 	*expired = !delta_tsc;
 	return 0;
 }
