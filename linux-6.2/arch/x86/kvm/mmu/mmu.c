@@ -5891,22 +5891,39 @@ int kvm_mmu_create(struct kvm_vcpu *vcpu)
 {
 	int ret;
 
-	vcpu->arch.mmu_pte_list_desc_cache.kmem_cache = pte_list_desc_cache;
-	vcpu->arch.mmu_pte_list_desc_cache.gfp_zero = __GFP_ZERO;
+/*
+ * 设置vCPU的页表条目列表缓存和分配标志
+ */
+vcpu->arch.mmu_pte_list_desc_cache.kmem_cache = pte_list_desc_cache;
+vcpu->arch.mmu_pte_list_desc_cache.gfp_zero = __GFP_ZERO;
 
-	vcpu->arch.mmu_page_header_cache.kmem_cache = mmu_page_header_cache;
-	vcpu->arch.mmu_page_header_cache.gfp_zero = __GFP_ZERO;
+/*
+ * 设置vCPU的页面头缓存和分配标志
+ */
+vcpu->arch.mmu_page_header_cache.kmem_cache = mmu_page_header_cache;
+vcpu->arch.mmu_page_header_cache.gfp_zero = __GFP_ZERO;
 
-	vcpu->arch.mmu_shadow_page_cache.gfp_zero = __GFP_ZERO;
+/*
+ * 设置vCPU的影子页面缓存和分配标志
+ */
+vcpu->arch.mmu_shadow_page_cache.gfp_zero = __GFP_ZERO;
 
-	vcpu->arch.mmu = &vcpu->arch.root_mmu;
-	vcpu->arch.walk_mmu = &vcpu->arch.root_mmu;
+/*
+ * 将vCPU的MMU指针指向根MMU，表示初始状态下使用根MMU进行地址转换
+ */
+vcpu->arch.mmu = &vcpu->arch.root_mmu;
 
-	ret = __kvm_mmu_create(vcpu, &vcpu->arch.guest_mmu);
+/*
+ * 将vCPU的walk MMU指针也指向根MMU，用于表示初始的地址转换过程使用的是根MMU
+ */
+vcpu->arch.walk_mmu = &vcpu->arch.root_mmu;
+
+
+	ret = __kvm_mmu_create(vcpu, &vcpu->arch.guest_mmu); //虚拟机内部mmu
 	if (ret)
 		return ret;
 
-	ret = __kvm_mmu_create(vcpu, &vcpu->arch.root_mmu);
+	ret = __kvm_mmu_create(vcpu, &vcpu->arch.root_mmu); //kvm中的mmu
 	if (ret)
 		goto fail_allocate_root;
 
@@ -6055,7 +6072,7 @@ int kvm_mmu_init_vm(struct kvm *kvm)
 	INIT_LIST_HEAD(&kvm->arch.possible_nx_huge_pages);
 	spin_lock_init(&kvm->arch.mmu_unsync_pages_lock);
 
-	r = kvm_mmu_init_tdp_mmu(kvm);
+	r = kvm_mmu_init_tdp_mmu(kvm);//初始化tdpmmu
 	if (r < 0)
 		return r;
 
