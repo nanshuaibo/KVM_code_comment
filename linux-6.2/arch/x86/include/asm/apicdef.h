@@ -95,9 +95,10 @@
 #define	APIC_LVTTHMR	0x330
 #define	APIC_LVTPC	0x340
 #define	APIC_LVT0	0x350
-#define		APIC_LVT_TIMER_ONESHOT		(0 << 17)
-#define		APIC_LVT_TIMER_PERIODIC		(1 << 17)
-#define		APIC_LVT_TIMER_TSCDEADLINE	(2 << 17)
+//定时器模式
+#define		APIC_LVT_TIMER_ONESHOT		(0 << 17) //单次触发
+#define		APIC_LVT_TIMER_PERIODIC		(1 << 17) //周期性触发模式
+#define		APIC_LVT_TIMER_TSCDEADLINE	(2 << 17) //TSC 截止模式
 #define		APIC_LVT_MASKED			(1 << 16)
 #define		APIC_LVT_LEVEL_TRIGGER		(1 << 15)
 #define		APIC_LVT_REMOTE_IRR		(1 << 14)

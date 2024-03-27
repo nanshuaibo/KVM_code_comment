@@ -156,9 +156,9 @@ static bool kvm_can_post_timer_interrupt(struct kvm_vcpu *vcpu)
 
 bool kvm_can_use_hv_timer(struct kvm_vcpu *vcpu)
 {
-	return kvm_x86_ops.set_hv_timer
-	       && !(kvm_mwait_in_guest(vcpu->kvm) ||
-		    kvm_can_post_timer_interrupt(vcpu));
+	return kvm_x86_ops.set_hv_timer //检查结构相关的hv定时器的函数指针是否存在
+	       && !(kvm_mwait_in_guest(vcpu->kvm) || //检查guest是否执行mwait指令。mwait为节能指令
+		    kvm_can_post_timer_interrupt(vcpu)); //检查是否可以发送定时器中断
 }
 
 static bool kvm_use_posted_timer_interrupt(struct kvm_vcpu *vcpu)
@@ -383,17 +383,17 @@ static inline int apic_lvt_enabled(struct kvm_lapic *apic, int lvt_type)
 
 static inline int apic_lvtt_oneshot(struct kvm_lapic *apic)
 {
-	return apic->lapic_timer.timer_mode == APIC_LVT_TIMER_ONESHOT;
+	return apic->lapic_timer.timer_mode == APIC_LVT_TIMER_ONESHOT; //单次触发模式
 }
 
 static inline int apic_lvtt_period(struct kvm_lapic *apic)
 {
-	return apic->lapic_timer.timer_mode == APIC_LVT_TIMER_PERIODIC;
+	return apic->lapic_timer.timer_mode == APIC_LVT_TIMER_PERIODIC; //周期性触发模式
 }
 
 static inline int apic_lvtt_tscdeadline(struct kvm_lapic *apic)
 {
-	return apic->lapic_timer.timer_mode == APIC_LVT_TIMER_TSCDEADLINE;
+	return apic->lapic_timer.timer_mode == APIC_LVT_TIMER_TSCDEADLINE; //tsc截至模式
 }
 
 static inline int apic_lvt_nmi_mode(u32 lvt_val)
@@ -1725,26 +1725,23 @@ static void apic_timer_expired(struct kvm_lapic *apic, bool from_timer_fn)
 	struct kvm_vcpu *vcpu = apic->vcpu;
 	struct kvm_timer *ktimer = &apic->lapic_timer;
 
+	// 如果已经有定时器到期事件挂起，则直接返回
 	if (atomic_read(&apic->lapic_timer.pending))
 		return;
 
+	// 如果当前是 TSC 截止模式或者 HV 定时器正在使用，则更新到期的 TSC 截止值
 	if (apic_lvtt_tscdeadline(apic) || ktimer->hv_timer_in_use)
 		ktimer->expired_tscdeadline = ktimer->tscdeadline;
 
+	// 如果不是来自定时器函数，并且 APICv 处于活跃状态，则注入挂起的定时器中断
 	if (!from_timer_fn && apic->apicv_active) {
 		WARN_ON(kvm_get_running_vcpu() != vcpu);
 		kvm_apic_inject_pending_timer_irqs(apic);
 		return;
 	}
 
+	// 如果使用了 posted 定时器中断，则等待直到定时器真正到期，并注入中断
 	if (kvm_use_posted_timer_interrupt(apic->vcpu)) {
-		/*
-		 * Ensure the guest's timer has truly expired before posting an
-		 * interrupt.  Open code the relevant checks to avoid querying
-		 * lapic_timer_int_injected(), which will be false since the
-		 * interrupt isn't yet injected.  Waiting until after injecting
-		 * is not an option since that won't help a posted interrupt.
-		 */
 		if (vcpu->arch.apic->lapic_timer.expired_tscdeadline &&
 		    vcpu->arch.apic->lapic_timer.timer_advance_ns)
 			__kvm_wait_lapic_expire(vcpu);
@@ -1752,11 +1749,13 @@ static void apic_timer_expired(struct kvm_lapic *apic, bool from_timer_fn)
 		return;
 	}
 
+	// 将定时器到期事件标记为挂起，并通知 VCPU 解除阻塞
 	atomic_inc(&apic->lapic_timer.pending);
 	kvm_make_request(KVM_REQ_UNBLOCK, vcpu);
 	if (from_timer_fn)
 		kvm_vcpu_kick(vcpu);
 }
+
 
 static void start_sw_tscdeadline(struct kvm_lapic *apic)
 {
@@ -1769,24 +1768,25 @@ static void start_sw_tscdeadline(struct kvm_lapic *apic)
 	unsigned long flags;
 	ktime_t now;
 
-	if (unlikely(!tscdeadline || !this_tsc_khz))
+	if (unlikely(!tscdeadline || !this_tsc_khz)) //tscdeadline或者vcpu频率为0
 		return;
 
-	local_irq_save(flags);
+	local_irq_save(flags); 
 
-	now = ktime_get();
-	guest_tsc = kvm_read_l1_tsc(vcpu, rdtsc());
+	now = ktime_get(); //当前时间
+	guest_tsc = kvm_read_l1_tsc(vcpu, rdtsc()); //guest的时钟周期
 
-	ns = (tscdeadline - guest_tsc) * 1000000ULL;
+	ns = (tscdeadline - guest_tsc) * 1000000ULL; 
 	do_div(ns, this_tsc_khz);
 
+	// 如果剩余时间大于定时器提前量，则启动软件定时器
 	if (likely(tscdeadline > guest_tsc) &&
 	    likely(ns > apic->lapic_timer.timer_advance_ns)) {
 		expire = ktime_add_ns(now, ns);
 		expire = ktime_sub_ns(expire, ktimer->timer_advance_ns);
-		hrtimer_start(&ktimer->timer, expire, HRTIMER_MODE_ABS_HARD);
+		hrtimer_start(&ktimer->timer, expire, HRTIMER_MODE_ABS_HARD); //启动hrtimer定时器
 	} else
-		apic_timer_expired(apic, false);
+		apic_timer_expired(apic, false); //定时器到期
 
 	local_irq_restore(flags);
 }
@@ -1868,44 +1868,49 @@ static bool set_target_expiration(struct kvm_lapic *apic, u32 count_reg)
 
 static void advance_periodic_target_expiration(struct kvm_lapic *apic)
 {
-	ktime_t now = ktime_get();
-	u64 tscl = rdtsc();
+	ktime_t now = ktime_get(); // 获取当前系统时间
+	u64 tscl = rdtsc(); // 获取当前 CPU 的时间戳计数器值
 	ktime_t delta;
 
 	/*
-	 * Synchronize both deadlines to the same time source or
-	 * differences in the periods (caused by differences in the
-	 * underlying clocks or numerical approximation errors) will
-	 * cause the two to drift apart over time as the errors
-	 * accumulate.
+	 * 同步两个截止时间到相同的时间源，
+	 * 否则两者之间的周期差异（由底层时钟的差异或数值近似误差引起）将导致它们随着时间的推移而漂移，
+	 * 因为误差会累积。
 	 */
 	apic->lapic_timer.target_expiration =
 		ktime_add_ns(apic->lapic_timer.target_expiration,
-				apic->lapic_timer.period);
-	delta = ktime_sub(apic->lapic_timer.target_expiration, now);
-	apic->lapic_timer.tscdeadline = kvm_read_l1_tsc(apic->vcpu, tscl) +
-		nsec_to_cycles(apic->vcpu, delta);
+				apic->lapic_timer.period); // 将目标过期时间增加一个周期
+	delta = ktime_sub(apic->lapic_timer.target_expiration, now); // 定时器的到期时间
+	apic->lapic_timer.tscdeadline = kvm_read_l1_tsc(apic->vcpu, tscl) + //kvm_read_l1_tsc是获取guest的时钟周期再加上定时器到期的时钟周期
+		nsec_to_cycles(apic->vcpu, delta); //定时器到期时间ns转换成时钟周期
 }
+
 
 static void start_sw_period(struct kvm_lapic *apic)
 {
+	// 如果周期性定时器的周期为零，则直接返回
 	if (!apic->lapic_timer.period)
 		return;
 
+	// 如果当前时间已经超过了定时器的目标过期时间，则将定时器标记为过期并处理
 	if (ktime_after(ktime_get(),
 			apic->lapic_timer.target_expiration)) {
-		apic_timer_expired(apic, false);
+		apic_timer_expired(apic, false); // 处理定时器过期事件
 
+		// 如果是单次触发定时器，则直接返回
 		if (apic_lvtt_oneshot(apic))
 			return;
 
+		// 更新周期性定时器的目标过期时间
 		advance_periodic_target_expiration(apic);
 	}
 
+	// 启动周期性定时器
 	hrtimer_start(&apic->lapic_timer.timer,
 		apic->lapic_timer.target_expiration,
 		HRTIMER_MODE_ABS_HARD);
 }
+
 
 bool kvm_lapic_hv_timer_in_use(struct kvm_vcpu *vcpu)
 {
@@ -1919,8 +1924,8 @@ static void cancel_hv_timer(struct kvm_lapic *apic)
 {
 	WARN_ON(preemptible());
 	WARN_ON(!apic->lapic_timer.hv_timer_in_use);
-	static_call(kvm_x86_cancel_hv_timer)(apic->vcpu);
-	apic->lapic_timer.hv_timer_in_use = false;
+	static_call(kvm_x86_cancel_hv_timer)(apic->vcpu);//调用vmx_cancel_hv_timer
+	apic->lapic_timer.hv_timer_in_use = false;//取消hv定时器
 }
 
 static bool start_hv_timer(struct kvm_lapic *apic)
@@ -1930,28 +1935,30 @@ static bool start_hv_timer(struct kvm_lapic *apic)
 	bool expired;
 
 	WARN_ON(preemptible());
-	if (!kvm_can_use_hv_timer(vcpu))
+	if (!kvm_can_use_hv_timer(vcpu)) //检查架构相关的hv函数指针是否存在
 		return false;
 
-	if (!ktimer->tscdeadline)
+	if (!ktimer->tscdeadline) //检查tscdeadline模式定时器是否过期
 		return false;
 
 	if (static_call(kvm_x86_set_hv_timer)(vcpu, ktimer->tscdeadline, &expired))
 		return false;
 
-	ktimer->hv_timer_in_use = true;
+	ktimer->hv_timer_in_use = true; //可能是hv定时器没到期，启动失败，会返回上层函数使用sw定时器
 	hrtimer_cancel(&ktimer->timer);
 
 	/*
-	 * To simplify handling the periodic timer, leave the hv timer running
-	 * even if the deadline timer has expired, i.e. rely on the resulting
-	 * VM-Exit to recompute the periodic timer's target expiration.
+	 * 为了简化处理周期性定时器而保持 HV（Hypervisor）定时器的运行，
+	 * 即使截止时间定时器已经过期。简单来说，即便期限定时器已经过期，
+	 * 也不会取消 HV 定时器，
+	 * 而是依靠随后的虚拟机退出事件重新计算周期性定时器的目标过期时间。
 	 */
 	if (!apic_lvtt_period(apic)) {
 		/*
-		 * Cancel the hv timer if the sw timer fired while the hv timer
-		 * was being programmed, or if the hv timer itself expired.
-		 */
+		* 如果 LAPIC 不是周期性定时器：
+		* 如果 SW 定时器在 HV 定时器设置过程中触发，或者 HV 定时器本身已经过期，
+		* 则取消 HV 定时器。
+		*/
 		if (atomic_read(&ktimer->pending)) {
 			cancel_hv_timer(apic);
 		} else if (expired) {
@@ -1969,26 +1976,38 @@ static void start_sw_timer(struct kvm_lapic *apic)
 {
 	struct kvm_timer *ktimer = &apic->lapic_timer;
 
+	// 检查是否处于抢占可抢占状态，如果是，发出警告
 	WARN_ON(preemptible());
+
+	// 如果 HV 定时器正在使用，则取消 HV 定时器
 	if (apic->lapic_timer.hv_timer_in_use)
 		cancel_hv_timer(apic);
+
+	// 如果不是周期性定时器且有待处理的定时器事件，则返回
 	if (!apic_lvtt_period(apic) && atomic_read(&ktimer->pending))
 		return;
 
+	// 根据 LAPIC 定时器类型选择相应的启动函数
 	if (apic_lvtt_period(apic) || apic_lvtt_oneshot(apic))
-		start_sw_period(apic);
+		start_sw_period(apic); // 启动周期性定时器
 	else if (apic_lvtt_tscdeadline(apic))
-		start_sw_tscdeadline(apic);
+		start_sw_tscdeadline(apic); // 启动 TSC 截止时间定时器
+
+	// 跟踪 HV 定时器状态变化
 	trace_kvm_hv_timer_state(apic->vcpu->vcpu_id, false);
 }
+
 
 static void restart_apic_timer(struct kvm_lapic *apic)
 {
 	preempt_disable();
 
+	// 如果 LAPIC 不是周期性定时器且有待处理的定时器事件
 	if (!apic_lvtt_period(apic) && atomic_read(&apic->lapic_timer.pending))
 		goto out;
 
+	// 如果启动 HV 定时器失败，则启动 SW 定时器,
+	// 优先使用hw定时器，如果hv定时器因为时间没到正在使用，则会启动sw定时器
 	if (!start_hv_timer(apic))
 		start_sw_timer(apic);
 out:
@@ -1997,22 +2016,27 @@ out:
 
 void kvm_lapic_expired_hv_timer(struct kvm_vcpu *vcpu)
 {
-	struct kvm_lapic *apic = vcpu->arch.apic;
+	struct kvm_lapic *apic = vcpu->arch.apic; // 获取 vcpu 对应的 LAPIC 结构体指针
 
-	preempt_disable();
-	/* If the preempt notifier has already run, it also called apic_timer_expired */
+	preempt_disable(); // 禁用内核抢占
+
+	/* 如果 HV 定时器已经在使用，执行相应操作 */
 	if (!apic->lapic_timer.hv_timer_in_use)
-		goto out;
-	WARN_ON(kvm_vcpu_is_blocking(vcpu));
-	apic_timer_expired(apic, false);
-	cancel_hv_timer(apic);
+		goto out; // 如果 HV 定时器未在使用，跳转到标签 out 处
 
+	WARN_ON(kvm_vcpu_is_blocking(vcpu)); // 如果 vCPU 被阻塞，产生警告
+
+	apic_timer_expired(apic, false); // 通知 LAPIC 定时器已过期（HV 定时器未过期）
+	cancel_hv_timer(apic); // 取消 HV 定时器
+
+	/* 如果 LAPIC 是周期性的，并且定时器周期大于 0，执行相应操作 */
 	if (apic_lvtt_period(apic) && apic->lapic_timer.period) {
-		advance_periodic_target_expiration(apic);
-		restart_apic_timer(apic);
+		advance_periodic_target_expiration(apic); // 提前周期性定时器的到期时间
+		restart_apic_timer(apic); // 重新启动 LAPIC 定时器
 	}
+
 out:
-	preempt_enable();
+	preempt_enable(); // 启用内核抢占
 }
 EXPORT_SYMBOL_GPL(kvm_lapic_expired_hv_timer);
 

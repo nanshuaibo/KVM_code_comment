@@ -44,26 +44,27 @@ enum lapic_lvt_entry {
 #define APIC_LVTx(x) ((x) == LVT_CMCI ? APIC_LVTCMCI : APIC_LVTT + 0x10 * (x))
 
 struct kvm_timer {
-	struct hrtimer timer;
-	s64 period; 				/* unit: ns */
-	ktime_t target_expiration;
-	u32 timer_mode;
-	u32 timer_mode_mask;
-	u64 tscdeadline;
-	u64 expired_tscdeadline;
-	u32 timer_advance_ns;
-	atomic_t pending;			/* accumulated triggered timers */
-	bool hv_timer_in_use;
+	struct hrtimer timer;      /* 高精度定时器结构体 */
+	s64 period;                /* 定时器周期，单位：纳秒 */
+	ktime_t target_expiration; /* 目标过期时间 */
+	u32 timer_mode;            /* 定时器模式 */
+	u32 timer_mode_mask;       /* 定时器模式掩码 */
+	u64 tscdeadline;           /* TSC-Deadline 模式下的过期时间 */
+	u64 expired_tscdeadline;   /* 已过期的 TSC-Deadline 模式的时间 */
+	u32 timer_advance_ns;      /* 定时器提前触发的时间，单位：纳秒 */
+	atomic_t pending;          /* 累积已触发的定时器 */
+	bool hv_timer_in_use;      /* 是否使用 HV（Hypervisor）定时器 */
 };
 
+
 struct kvm_lapic {
-	unsigned long base_address;
+	unsigned long base_address; //lapic基地址
 	struct kvm_io_device dev;
-	struct kvm_timer lapic_timer;
+	struct kvm_timer lapic_timer;// LAPIC 定时器
 	u32 divide_count;
 	struct kvm_vcpu *vcpu;
-	bool apicv_active;
-	bool sw_enabled;
+	bool apicv_active; //是否启用了 APICv
+	bool sw_enabled; // LAPIC 是否被软件启用
 	bool irr_pending;
 	bool lvt0_in_nmi_mode;
 	/* Number of bits set in ISR. */
@@ -76,11 +77,11 @@ struct kvm_lapic {
 	 * Note: Only one register, the TPR, is used by the microcode.
 	 */
 	void *regs;
-	gpa_t vapic_addr;
-	struct gfn_to_hva_cache vapic_cache;
-	unsigned long pending_events;
+	gpa_t vapic_addr; //虚拟 APIC 地址
+	struct gfn_to_hva_cache vapic_cache;//虚拟 APIC 地址转换的缓存
+	unsigned long pending_events;//待处理的事件数
 	unsigned int sipi_vector;
-	int nr_lvt_entries;
+	int nr_lvt_entries; //LAPIC 的 LVT（Local Vector Table）条目数量
 };
 
 struct dest_map;

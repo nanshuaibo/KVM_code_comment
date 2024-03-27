@@ -2557,7 +2557,7 @@ static u64 kvm_compute_l1_tsc_offset(struct kvm_vcpu *vcpu, u64 target_tsc)
 u64 kvm_read_l1_tsc(struct kvm_vcpu *vcpu, u64 host_tsc)
 {
 	return vcpu->arch.l1_tsc_offset +
-		kvm_scale_tsc(host_tsc, vcpu->arch.l1_tsc_scaling_ratio);
+		kvm_scale_tsc(host_tsc, vcpu->arch.l1_tsc_scaling_ratio); //tsc加上host的乘guest tsc的ratio
 }
 EXPORT_SYMBOL_GPL(kvm_read_l1_tsc);
 
@@ -5702,7 +5702,7 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 		r = 0;
 		break;
 	};
-	case KVM_SET_VAPIC_ADDR: {
+	case KVM_SET_VAPIC_ADDR: { //设置apicv页面的地址
 		struct kvm_vapic_addr va;
 		int idx;
 
@@ -9242,11 +9242,23 @@ static int kvmclock_cpu_online(unsigned int cpu)
 	return 0;
 }
 
+/*
+ * 初始化 KVM 定时器。
+ * 如果当前 CPU 不支持常量 TSC（时间戳计数器），
+ * 则初始化 max_tsc_khz 为 tsc_khz。
+ * 如果启用了 CPU 频率调节功能，并且有可用的频率策略，
+ * 则使用最大频率更新 max_tsc_khz。
+ * 注册 CPU 频率变化的通知回调函数，以便在 CPU 频率发生变化时更新定时器。
+ * 设置 CPU 热插拔状态，以便在 CPU 上线时初始化 kvmclock，
+ * 在 CPU 下线前准备关闭 kvmclock。
+ */
 static void kvm_timer_init(void)
 {
+	// 如果当前 CPU 不支持常量 TSC，则初始化 max_tsc_khz 为 tsc_khz
 	if (!boot_cpu_has(X86_FEATURE_CONSTANT_TSC)) {
 		max_tsc_khz = tsc_khz;
 
+		// 如果启用了 CPU 频率调节功能，并且有可用的频率策略
 		if (IS_ENABLED(CONFIG_CPU_FREQ)) {
 			struct cpufreq_policy *policy;
 			int cpu;
@@ -9254,19 +9266,25 @@ static void kvm_timer_init(void)
 			cpu = get_cpu();
 			policy = cpufreq_cpu_get(cpu);
 			if (policy) {
+				// 如果有最大频率信息，则使用最大频率更新 max_tsc_khz
 				if (policy->cpuinfo.max_freq)
 					max_tsc_khz = policy->cpuinfo.max_freq;
 				cpufreq_cpu_put(policy);
 			}
 			put_cpu();
 		}
+
+		// 注册 CPU 频率变化的通知回调函数
 		cpufreq_register_notifier(&kvmclock_cpufreq_notifier_block,
 					  CPUFREQ_TRANSITION_NOTIFIER);
 
+		// 设置 CPU 热插拔状态，用于初始化 kvmclock 和准备关闭 kvmclock
 		cpuhp_setup_state(CPUHP_AP_X86_KVM_CLK_ONLINE, "x86/kvm/clk:online",
 				  kvmclock_cpu_online, kvmclock_cpu_down_prep);
 	}
 }
+
+
 
 #ifdef CONFIG_X86_64
 static void pvclock_gtod_update_fn(struct work_struct *work)
@@ -9330,6 +9348,7 @@ int kvm_arch_init(void *opaque)
 	u64 host_pat;
 	int r;
 
+	//硬件辅助虚拟化技术vmx，svm
 	if (kvm_x86_ops.hardware_enable) {
 		pr_err("kvm: already loaded vendor module '%s'\n", kvm_x86_ops.name);
 		return -EEXIST;
@@ -10672,7 +10691,7 @@ static inline int vcpu_block(struct kvm_vcpu *vcpu)
 {
 	bool hv_timer;
 
-	if (!kvm_arch_vcpu_runnable(vcpu)) {
+	if (!kvm_arch_vcpu_runnable(vcpu)) { //vcpu不可运行
 		/*
 		 * Switch to the software timer before halt-polling/blocking as
 		 * the guest's timer may be a break event for the vCPU, and the
@@ -10680,19 +10699,19 @@ static inline int vcpu_block(struct kvm_vcpu *vcpu)
 		 * Switch before halt-polling so that KVM recognizes an expired
 		 * timer before blocking.
 		 */
-		hv_timer = kvm_lapic_hv_timer_in_use(vcpu);
+		hv_timer = kvm_lapic_hv_timer_in_use(vcpu); //如果硬件定时器在使用
 		if (hv_timer)
-			kvm_lapic_switch_to_sw_timer(vcpu);
+			kvm_lapic_switch_to_sw_timer(vcpu); //切换到软件定时器
 
 		kvm_vcpu_srcu_read_unlock(vcpu);
-		if (vcpu->arch.mp_state == KVM_MP_STATE_HALTED)
+		if (vcpu->arch.mp_state == KVM_MP_STATE_HALTED) //如果vcpu处于halt状态
 			kvm_vcpu_halt(vcpu);
 		else
 			kvm_vcpu_block(vcpu);
 		kvm_vcpu_srcu_read_lock(vcpu);
 
 		if (hv_timer)
-			kvm_lapic_switch_to_hv_timer(vcpu);
+			kvm_lapic_switch_to_hv_timer(vcpu); //切换回硬件定时器
 
 		/*
 		 * If the vCPU is not runnable, a signal or another host event
@@ -11621,23 +11640,26 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	struct page *page;
 	int r;
 
-	vcpu->arch.last_vmentry_cpu = -1;
-	vcpu->arch.regs_avail = ~0;
-	vcpu->arch.regs_dirty = ~0;
+	//初始化vcpu的基本状态
+	vcpu->arch.last_vmentry_cpu = -1; //上一次VCPU入口的CPU编号
+	vcpu->arch.regs_avail = ~0;  //表示所有寄存器都可用
+	vcpu->arch.regs_dirty = ~0; //表示所有寄存器都被修改过
 
+	// 初始化虚拟处理器时间
 	kvm_gpc_init(&vcpu->arch.pv_time, vcpu->kvm, vcpu, KVM_HOST_USES_PFN);
 
 	if (!irqchip_in_kernel(vcpu->kvm) || kvm_vcpu_is_reset_bsp(vcpu))
-		vcpu->arch.mp_state = KVM_MP_STATE_RUNNABLE;
+		vcpu->arch.mp_state = KVM_MP_STATE_RUNNABLE;// 设置vcpu为可运行状态
 	else
-		vcpu->arch.mp_state = KVM_MP_STATE_UNINITIALIZED;
+		vcpu->arch.mp_state = KVM_MP_STATE_UNINITIALIZED;// 设置vcpu为未初始化状态
 
 	r = kvm_mmu_create(vcpu);
 	if (r < 0)
 		return r;
 
+	// kvm中模拟中断控制器
 	if (irqchip_in_kernel(vcpu->kvm)) {
-		r = kvm_create_lapic(vcpu, lapic_timer_advance_ns);
+		r = kvm_create_lapic(vcpu, lapic_timer_advance_ns);//创建lapic
 		if (r < 0)
 			goto fail_mmu_destroy;
 
@@ -11651,6 +11673,7 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 		 * is guaranteed to run with a deterministic value, the request
 		 * will ensure the vCPU gets the correct state before VM-Entry.
 		 */
+		 // 配置APICv，如果启用，标记APICv为激活状态
 		if (enable_apicv) { //
 			vcpu->arch.apic->apicv_active = true; //启用apicv硬件虚拟化
 			kvm_make_request(KVM_REQ_APICV_UPDATE, vcpu);
@@ -11660,6 +11683,7 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 
 	r = -ENOMEM;
 
+	// 分配用于PIO（端口输入/输出）操作的页面
 	page = alloc_page(GFP_KERNEL_ACCOUNT | __GFP_ZERO);
 	if (!page)
 		goto fail_free_lapic;
@@ -11710,11 +11734,11 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	vcpu->arch.msr_platform_info = MSR_PLATFORM_INFO_CPUID_FAULT;
 	kvm_xen_init_vcpu(vcpu);
 	kvm_vcpu_mtrr_init(vcpu);
-	vcpu_load(vcpu);
+	vcpu_load(vcpu);// 加载VCPU
 	kvm_set_tsc_khz(vcpu, vcpu->kvm->arch.default_tsc_khz);
 	kvm_vcpu_reset(vcpu, false);
-	kvm_init_mmu(vcpu);
-	vcpu_put(vcpu);
+	kvm_init_mmu(vcpu);// 初始化内存管理单元
+	vcpu_put(vcpu);// 完成VCPU初始化后，释放/保存VCPU状态
 	return 0;
 
 free_guest_fpu:
