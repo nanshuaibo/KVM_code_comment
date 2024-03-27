@@ -45,6 +45,8 @@
  * In x86, the VCPU ID corresponds to the APIC ID, and APIC IDs
  * might be larger than the actual number of VCPUs because the
  * APIC ID encodes CPU topology information.
+ * 在 x86 架构中，VCPU ID 对应于 APIC ID，
+ * 而 APIC IDs 可能比实际的 VCPU 数量要大，因为 APIC ID 编码了 CPU 拓扑信息。
  *
  * In the worst case, we'll need less than one extra bit for the
  * Core ID, and less than one extra bit for the Package (Die) ID,
@@ -1740,14 +1742,14 @@ struct kvm_x86_nested_ops {
 };
 
 struct kvm_x86_init_ops {
-	int (*cpu_has_kvm_support)(void);
-	int (*disabled_by_bios)(void);
-	int (*check_processor_compatibility)(void);
-	int (*hardware_setup)(void);
-	unsigned int (*handle_intel_pt_intr)(void);
+	int (*cpu_has_kvm_support)(void); //检查当前cpu是否支持kvm
+	int (*disabled_by_bios)(void); //检查bios是否启用kvm
+	int (*check_processor_compatibility)(void);//检查cpu是否兼容kvm
+	int (*hardware_setup)(void); //初始化硬件相关设置
+	unsigned int (*handle_intel_pt_intr)(void); //处理 Intel PT（Processor Trace）中断
 
 	struct kvm_x86_ops *runtime_ops;
-	struct kvm_pmu_ops *pmu_ops;
+	struct kvm_pmu_ops *pmu_ops; //pmu相关操作函数
 };
 
 struct kvm_arch_async_pf {
