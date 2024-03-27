@@ -216,6 +216,7 @@ struct page *kvm_pfn_to_refcounted_page(kvm_pfn_t pfn)
 
 /*
  * Switches to specified vcpu, until a matching vcpu_put()
+ * 切换到指定的vcpu上
  */
 void vcpu_load(struct kvm_vcpu *vcpu)
 {
