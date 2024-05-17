@@ -18,6 +18,8 @@ extern void get_avenrun(unsigned long *loads, unsigned long offset, int shift);
 #define FSHIFT		11		/* nr of bits of precision */
 #define FIXED_1		(1<<FSHIFT)	/* 1.0 as fixed-point */
 #define LOAD_FREQ	(5*HZ+1)	/* 5 sec intervals */
+
+//平滑因子，不时间段对应不同的取值
 #define EXP_1		1884		/* 1/exp(5sec/1min) as fixed-point */
 #define EXP_5		2014		/* 1/exp(5sec/5min) */
 #define EXP_15		2037		/* 1/exp(5sec/15min) */
@@ -26,10 +28,10 @@ extern void get_avenrun(unsigned long *loads, unsigned long offset, int shift);
  * a1 = a0 * e + a * (1 - e)
  */
 static inline unsigned long
-calc_load(unsigned long load, unsigned long exp, unsigned long active)
+calc_load(unsigned long load, unsigned long exp, unsigned long active) //atcive是当前活跃进程数，包括运行队列和等待队列的进程
 {
 	unsigned long newload;
-
+	// 如果当前活跃进程数大于等于前一个负载值，则将新负载值递增一个单位
 	newload = load * exp + active * (FIXED_1 - exp);
 	if (active >= load)
 		newload += FIXED_1-1;

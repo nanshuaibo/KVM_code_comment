@@ -362,9 +362,11 @@ void calc_global_load(void)
 	if (delta)
 		atomic_long_add(delta, &calc_load_tasks);
 
+	//当前活跃进程数
 	active = atomic_long_read(&calc_load_tasks);
 	active = active > 0 ? active * FIXED_1 : 0;
 
+	// 使用指数移动平均更新负载平均值
 	avenrun[0] = calc_load(avenrun[0], EXP_1, active);
 	avenrun[1] = calc_load(avenrun[1], EXP_5, active);
 	avenrun[2] = calc_load(avenrun[2], EXP_15, active);
