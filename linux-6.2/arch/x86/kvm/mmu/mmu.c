@@ -4167,17 +4167,20 @@ static void shadow_page_table_clear_flood(struct kvm_vcpu *vcpu, gva_t addr)
 	walk_shadow_page_lockless_end(vcpu);
 }
 
+// 定义一个名为alloc_apf_token的静态函数，接受一个指向kvm_vcpu结构的指针作为参数
 static u32 alloc_apf_token(struct kvm_vcpu *vcpu)
 {
-	/* make sure the token value is not 0 */
-	u32 id = vcpu->arch.apf.id;
+    // 声明一个u32类型的变量id，将其初始化为vcpu->arch.apf.id的值
+    u32 id = vcpu->arch.apf.id;
 
-	if (id << 12 == 0)
-		vcpu->arch.apf.id = 1;
+    // 确保id的值不为0。如果id左移12位后等于0，将vcpu->arch.apf.id设置为1
+    if (id << 12 == 0)
+        vcpu->arch.apf.id = 1;
 
-	return (vcpu->arch.apf.id++ << 12) | vcpu->vcpu_id;
+    // 将vcpu->arch.apf.id递增，然后将结果左移12位，并与vcpu->vcpu_id进行按位或操作，以生成一个唯一的APF令牌
+    // 返回生成的APF令牌
+    return (vcpu->arch.apf.id++ << 12) | vcpu->vcpu_id;
 }
-
 static bool kvm_arch_setup_async_pf(struct kvm_vcpu *vcpu, gpa_t cr2_or_gpa,
 				    gfn_t gfn)
 {
@@ -4211,65 +4214,56 @@ void kvm_arch_async_page_ready(struct kvm_vcpu *vcpu, struct kvm_async_pf *work)
 	kvm_mmu_do_page_fault(vcpu, work->cr2_or_gpa, 0, true);
 }
 
+// 函数功能：处理客户机的页错误，将客户机的物理页帧号（gfn）映射到宿主机的物理页帧号（pfn）
 static int kvm_faultin_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 {
-	struct kvm_memory_slot *slot = fault->slot;
-	bool async;
+    struct kvm_memory_slot *slot = fault->slot;
+    bool async;
 
-	/*
-	 * Retry the page fault if the gfn hit a memslot that is being deleted
-	 * or moved.  This ensures any existing SPTEs for the old memslot will
-	 * be zapped before KVM inserts a new MMIO SPTE for the gfn.
-	 */
-	if (slot && (slot->flags & KVM_MEMSLOT_INVALID))
-		return RET_PF_RETRY;
+    // 如果gfn命中正在删除或移动的内存槽，则重试页错误
+    if (slot && (slot->flags & KVM_MEMSLOT_INVALID))
+        return RET_PF_RETRY;
 
-	if (!kvm_is_visible_memslot(slot)) {
-		/* Don't expose private memslots to L2. */
-		if (is_guest_mode(vcpu)) {
-			fault->slot = NULL;
-			fault->pfn = KVM_PFN_NOSLOT;
-			fault->map_writable = false;
-			return RET_PF_CONTINUE;
-		}
-		/*
-		 * If the APIC access page exists but is disabled, go directly
-		 * to emulation without caching the MMIO access or creating a
-		 * MMIO SPTE.  That way the cache doesn't need to be purged
-		 * when the AVIC is re-enabled.
-		 */
-		if (slot && slot->id == APIC_ACCESS_PAGE_PRIVATE_MEMSLOT &&
-		    !kvm_apicv_activated(vcpu->kvm))
-			return RET_PF_EMULATE;
-	}
+    // 如果内存槽对L2不可见，不暴露私有内存槽给L2
+    if (!kvm_is_visible_memslot(slot)) {
+        if (is_guest_mode(vcpu)) {
+            fault->slot = NULL;
+            fault->pfn = KVM_PFN_NOSLOT;
+            fault->map_writable = false;
+            return RET_PF_CONTINUE;
+        }
+        // 如果APIC访问页存在但被禁用，直接进行仿真，不缓存MMIO访问或创建MMIO SPTE
+        if (slot && slot->id == APIC_ACCESS_PAGE_PRIVATE_MEMSLOT &&
+            !kvm_apicv_activated(vcpu->kvm))
+            return RET_PF_EMULATE;
+    }
 
-	async = false;
-	fault->pfn = __gfn_to_pfn_memslot(slot, fault->gfn, false, false, &async,
-					  fault->write, &fault->map_writable,
-					  &fault->hva);
-	if (!async)
-		return RET_PF_CONTINUE; /* *pfn has correct page already */
+    async = false;
+    // 将gfn转换为pfn，设置相应的访问权限和标志
+    fault->pfn = __gfn_to_pfn_memslot(slot, fault->gfn, false, false, &async,
+                                      fault->write, &fault->map_writable,
+                                      &fault->hva);
+    // 如果不需要异步操作，直接返回
+    if (!async)
+        return RET_PF_CONTINUE;
 
-	if (!fault->prefetch && kvm_can_do_async_pf(vcpu)) {
-		trace_kvm_try_async_get_page(fault->addr, fault->gfn);
-		if (kvm_find_async_pf_gfn(vcpu, fault->gfn)) {
-			trace_kvm_async_pf_repeated_fault(fault->addr, fault->gfn);
-			kvm_make_request(KVM_REQ_APF_HALT, vcpu);
-			return RET_PF_RETRY;
-		} else if (kvm_arch_setup_async_pf(vcpu, fault->addr, fault->gfn)) {
-			return RET_PF_RETRY;
-		}
-	}
+    // 如果可以执行异步页错误处理，尝试设置异步PF
+    if (!fault->prefetch && kvm_can_do_async_pf(vcpu)/*判断是否支持apf*/) {
+        trace_kvm_try_async_get_page(fault->addr, fault->gfn);
+        if (kvm_find_async_pf_gfn(vcpu, fault->gfn)) {
+            trace_kvm_async_pf_repeated_fault(fault->addr, fault->gfn);
+            kvm_make_request(KVM_REQ_APF_HALT, vcpu);
+            return RET_PF_RETRY;
+        } else if (kvm_arch_setup_async_pf(vcpu, fault->addr, fault->gfn)) /*设置异步pf*/{
+            return RET_PF_RETRY;
+        }
+    }
 
-	/*
-	 * Allow gup to bail on pending non-fatal signals when it's also allowed
-	 * to wait for IO.  Note, gup always bails if it is unable to quickly
-	 * get a page and a fatal signal, i.e. SIGKILL, is pending.
-	 */
-	fault->pfn = __gfn_to_pfn_memslot(slot, fault->gfn, false, true, NULL,
-					  fault->write, &fault->map_writable,
-					  &fault->hva);
-	return RET_PF_CONTINUE;
+    // 允许gup在等待IO时因非致命信号而退出
+    fault->pfn = __gfn_to_pfn_memslot(slot, fault->gfn, false, true, NULL,
+                                      fault->write, &fault->map_writable,
+                                      &fault->hva);
+    return RET_PF_CONTINUE;
 }
 
 /*

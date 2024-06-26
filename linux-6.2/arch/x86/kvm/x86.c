@@ -12969,80 +12969,82 @@ static bool kvm_can_deliver_async_pf(struct kvm_vcpu *vcpu)
 	}
 }
 
+// 函数功能：检查KVM虚拟CPU（vcpu）是否可以执行异步页错误（async PF）处理
 bool kvm_can_do_async_pf(struct kvm_vcpu *vcpu)
 {
-	if (unlikely(!lapic_in_kernel(vcpu) ||
-		     kvm_event_needs_reinjection(vcpu) ||
-		     kvm_is_exception_pending(vcpu)))
-		return false;
+    // 如果LAPIC不在内核模式、需要重新注入事件或存在挂起的异常，则返回false
+    if (unlikely(!lapic_in_kernel(vcpu) ||
+                 kvm_event_needs_reinjection(vcpu) ||
+                 kvm_is_exception_pending(vcpu)))
+        return false;
 
-	if (kvm_hlt_in_guest(vcpu->kvm) && !kvm_can_deliver_async_pf(vcpu))
-		return false;
+    // 如果KVM在客户机中执行HLT指令且无法传递异步PF，则返回false
+    if (kvm_hlt_in_guest(vcpu->kvm) && !kvm_can_deliver_async_pf(vcpu))
+        return false;
 
-	/*
-	 * If interrupts are off we cannot even use an artificial
-	 * halt state.
-	 */
-	return kvm_arch_interrupt_allowed(vcpu);
+    // 如果中断已关闭，我们甚至无法使用人工停机状态
+    return kvm_arch_interrupt_allowed(vcpu);
 }
-
+ 
 bool kvm_arch_async_page_not_present(struct kvm_vcpu *vcpu,
-				     struct kvm_async_pf *work)
+        struct kvm_async_pf *work)
 {
-	struct x86_exception fault;
+    struct x86_exception fault;
 
-	trace_kvm_async_pf_not_present(work->arch.token, work->cr2_or_gpa);
-	kvm_add_async_pf_gfn(vcpu, work->arch.gfn);
+    // 跟踪异步页表不存在的错误
+    trace_kvm_async_pf_not_present(work->arch.token, work->cr2_or_gpa);
+    
+    // 将异步页表错误添加到虚拟CPU的队列中
+    kvm_add_async_pf_gfn(vcpu, work->arch.gfn);
 
-	if (kvm_can_deliver_async_pf(vcpu) &&
-	    !apf_put_user_notpresent(vcpu)) {
-		fault.vector = PF_VECTOR;
-		fault.error_code_valid = true;
-		fault.error_code = 0;
-		fault.nested_page_fault = false;
-		fault.address = work->arch.token;
-		fault.async_page_fault = true;
-		kvm_inject_page_fault(vcpu, &fault);
-		return true;
-	} else {
-		/*
-		 * It is not possible to deliver a paravirtualized asynchronous
-		 * page fault, but putting the guest in an artificial halt state
-		 * can be beneficial nevertheless: if an interrupt arrives, we
-		 * can deliver it timely and perhaps the guest will schedule
-		 * another process.  When the instruction that triggered a page
-		 * fault is retried, hopefully the page will be ready in the host.
-		 */
-		kvm_make_request(KVM_REQ_APF_HALT, vcpu);
-		return false;
-	}
+    // 如果可以处理异步页表错误并且满足其他条件，则注入页面错误
+    if (kvm_can_deliver_async_pf(vcpu) &&
+        !apf_put_user_notpresent(vcpu)) {
+        fault.vector = PF_VECTOR; // 设置页面错误的中断向量
+        fault.error_code_valid = true; // 错误代码有效
+        fault.error_code = 0; // 设置错误代码
+        fault.nested_page_fault = false; // 非嵌套页面错误
+        fault.address = work->arch.token; // 设置错误地址
+        fault.async_page_fault = true; // 标记为异步页面错误
+        kvm_inject_page_fault(vcpu, &fault); // 注入页面错误
+        return true;
+    } else {
+        // 无法立即处理异步页表错误，将虚拟机置于人工暂停状态
+        kvm_make_request(KVM_REQ_APF_HALT, vcpu);
+        return false;
+    }
 }
 
 void kvm_arch_async_page_present(struct kvm_vcpu *vcpu,
-				 struct kvm_async_pf *work)
+        struct kvm_async_pf *work)
 {
-	struct kvm_lapic_irq irq = {
-		.delivery_mode = APIC_DM_FIXED,
-		.vector = vcpu->arch.apf.vec
-	};
+    // 创建一个kvm_lapic_irq结构体，用于设置APIC中断
+    struct kvm_lapic_irq irq = {
+        .delivery_mode = APIC_DM_FIXED, // 设定中断传递模式为固定向量
+        .vector = vcpu->arch.apf.vec   // 设置中断向量
+    };
 
-	if (work->wakeup_all)
-		work->arch.token = ~0; /* broadcast wakeup */
-	else
-		kvm_del_async_pf_gfn(vcpu, work->arch.gfn);
-	trace_kvm_async_pf_ready(work->arch.token, work->cr2_or_gpa);
+    // 根据wakeup_all标志决定是广播唤醒还是删除异步页表项
+    if (work->wakeup_all)
+        work->arch.token = ~0; /* 广播唤醒 */
+    else
+        kvm_del_async_pf_gfn(vcpu, work->arch.gfn);
 
-	if ((work->wakeup_all || work->notpresent_injected) &&
-	    kvm_pv_async_pf_enabled(vcpu) &&
-	    !apf_put_user_ready(vcpu, work->arch.token)) {
-		vcpu->arch.apf.pageready_pending = true;
-		kvm_apic_set_irq(vcpu, &irq, NULL);
-	}
+    // 跟踪异步页表填充准备就绪事件
+    trace_kvm_async_pf_ready(work->arch.token, work->cr2_or_gpa);
 
-	vcpu->arch.apf.halted = false;
-	vcpu->arch.mp_state = KVM_MP_STATE_RUNNABLE;
+    // 如果满足以下条件，则设置待处理的页表填充事件并触发APIC中断
+    if ((work->wakeup_all || work->notpresent_injected) &&
+        kvm_pv_async_pf_enabled(vcpu) &&
+        !apf_put_user_ready(vcpu, work->arch.token)) {
+        vcpu->arch.apf.pageready_pending = true; // 标记页表填充事件待处理
+        kvm_apic_set_irq(vcpu, &irq, NULL);     // 触发APIC中断
+    }
+
+    // 更新虚拟CPU的状态
+    vcpu->arch.apf.halted = false;          // 虚拟CPU不再处于停止状态
+    vcpu->arch.mp_state = KVM_MP_STATE_RUNNABLE; // 设置虚拟CPU为可运行状态
 }
-
 void kvm_arch_async_page_present_queued(struct kvm_vcpu *vcpu)
 {
 	kvm_make_request(KVM_REQ_APF_READY, vcpu);

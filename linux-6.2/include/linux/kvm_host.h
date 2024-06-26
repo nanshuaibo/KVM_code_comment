@@ -236,16 +236,26 @@ struct kvm_io_device *kvm_io_bus_get_dev(struct kvm *kvm, enum kvm_bus bus_idx,
 
 #ifdef CONFIG_KVM_ASYNC_PF
 struct kvm_async_pf {
-	struct work_struct work;
-	struct list_head link;
-	struct list_head queue;
-	struct kvm_vcpu *vcpu;
-	struct mm_struct *mm;
-	gpa_t cr2_or_gpa;
-	unsigned long addr;
-	struct kvm_arch_async_pf arch;
-	bool   wakeup_all;
-	bool notpresent_injected;
+    //用于将异步页面错误作为一个内核工作项进行处理
+    struct work_struct work;
+    // 用于将多个kvm_async_pf结构体链接在一起
+    struct list_head link;
+    //用于将多个kvm_async_pf结构体组织成一个队列
+    struct list_head queue;
+    // 示发生异步页面错误的虚拟CPU
+    struct kvm_vcpu *vcpu;
+    // 表示虚拟机的内存管理结构
+    struct mm_struct *mm;
+    // GPA（Guest Physical Address，客户机物理地址）或CR2寄存器的值，用于定位页面错误发生的地址
+    gpa_t cr2_or_gpa;
+    // 发生页面错误的hva
+    unsigned long addr;
+
+    struct kvm_arch_async_pf arch;
+    // 布尔值，表示是否需要唤醒所有等待的虚拟CPU
+    bool wakeup_all;
+    // 布尔值，表示是否已经注入了页面不存在的异常
+    bool notpresent_injected;
 };
 
 void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu);
@@ -1689,18 +1699,19 @@ __gfn_to_memslot(struct kvm_memslots *slots, gfn_t gfn)
 	return ____gfn_to_memslot(slots, gfn, false);
 }
 
+// 定义一个名为__gfn_to_hva_memslot的静态内联函数，接受一个指向kvm_memory_slot结构的指针和一个gfn_t类型的值作为参数
 static inline unsigned long
 __gfn_to_hva_memslot(const struct kvm_memory_slot *slot, gfn_t gfn)
 {
-	/*
-	 * The index was checked originally in search_memslots.  To avoid
-	 * that a malicious guest builds a Spectre gadget out of e.g. page
-	 * table walks, do not let the processor speculate loads outside
-	 * the guest's registered memslots.
-	 */
-	unsigned long offset = gfn - slot->base_gfn;
-	offset = array_index_nospec(offset, slot->npages);
-	return slot->userspace_addr + offset * PAGE_SIZE;
+    // 计算GFN与内存槽基址GFN之间的偏移量
+    unsigned long offset = gfn - slot->base_gfn;
+
+    // 使用array_index_nospec()函数确保偏移量不会导致处理器推测加载超出客户机的注册内存槽范围
+    // 这有助于防止潜在的Spectre攻击
+    offset = array_index_nospec(offset, slot->npages);
+
+    // 将偏移量乘以页面大小（PAGE_SIZE），然后加到内存槽的用户空间地址上，得到对应的宿主机虚拟地址
+    return slot->userspace_addr + offset * PAGE_SIZE;
 }
 
 static inline int memslot_id(struct kvm *kvm, gfn_t gfn)

@@ -2439,20 +2439,23 @@ static bool memslot_is_readonly(const struct kvm_memory_slot *slot)
 }
 
 static unsigned long __gfn_to_hva_many(const struct kvm_memory_slot *slot, gfn_t gfn,
-				       gfn_t *nr_pages, bool write)
+        gfn_t *nr_pages, bool write)
 {
-	if (!slot || slot->flags & KVM_MEMSLOT_INVALID)
-		return KVM_HVA_ERR_BAD;
+    // 如果内存槽无效，返回KVM_HVA_ERR_BAD错误码
+    if (!slot || slot->flags & KVM_MEMSLOT_INVALID)
+        return KVM_HVA_ERR_BAD;
 
-	if (memslot_is_readonly(slot) && write)
-		return KVM_HVA_ERR_RO_BAD;
+    // 如果内存槽是只读的且尝试写入，返回KVM_HVA_ERR_RO_BAD错误码
+    if (memslot_is_readonly(slot) && write)
+        return KVM_HVA_ERR_RO_BAD;
 
-	if (nr_pages)
-		*nr_pages = slot->npages - (gfn - slot->base_gfn);
+    // 如果提供了nr_pages指针，计算并设置可用的GFN数量
+    if (nr_pages)
+        *nr_pages = slot->npages - (gfn - slot->base_gfn);
 
-	return __gfn_to_hva_memslot(slot, gfn);
+    // 调用__gfn_to_hva_memslot()函数将给定的GFN转换为对应的宿主机虚拟地址
+    return __gfn_to_hva_memslot(slot, gfn);
 }
-
 static unsigned long gfn_to_hva_many(struct kvm_memory_slot *slot, gfn_t gfn,
 				     gfn_t *nr_pages)
 {
@@ -2519,74 +2522,76 @@ static inline int check_user_page_hwpoison(unsigned long addr)
 	return rc == -EHWPOISON;
 }
 
-/*
- * The fast path to get the writable pfn which will be stored in @pfn,
- * true indicates success, otherwise false is returned.  It's also the
- * only part that runs if we can in atomic context.
+/**
+ * 快速路径获取可写的pfn（物理页帧号），将其存储在@pfn中。
+ * 如果成功则返回true，否则返回false。这也是我们可以在原子上下文中运行的唯一部分。
  */
 static bool hva_to_pfn_fast(unsigned long addr, bool write_fault,
-			    bool *writable, kvm_pfn_t *pfn)
+                             bool *writable, kvm_pfn_t *pfn)
 {
-	struct page *page[1];
+    struct page *page[1];
 
-	/*
-	 * Fast pin a writable pfn only if it is a write fault request
-	 * or the caller allows to map a writable pfn for a read fault
-	 * request.
-	 */
-	if (!(write_fault || writable))
-		return false;
+    // 仅在写故障请求或调用者允许为读故障请求映射可写pfn时，快速固定可写pfn
+    if (!(write_fault || writable))
+        return false;
 
-	if (get_user_page_fast_only(addr, FOLL_WRITE, page)) {
-		*pfn = page_to_pfn(page[0]);
+    // 尝试快速获取用户空间页面，并确保页面是可写的
+    if (get_user_page_fast_only(addr, FOLL_WRITE, page)) {
+        // 将获取到的页面转换为pfn
+        *pfn = page_to_pfn(page[0]);
 
-		if (writable)
-			*writable = true;
-		return true;
-	}
+        // 如果提供了writable指针，将其设置为true
+        if (writable)
+            *writable = true;
+        return true;
+    }
 
-	return false;
+    return false;
 }
 
-/*
- * The slow path to get the pfn of the specified host virtual address,
- * 1 indicates success, -errno is returned if error is detected.
+/**
+ * 慢速路径获取指定宿主机虚拟地址的pfn（物理页帧号），
+ * 成功返回1，检测到错误时返回-errno。
  */
 static int hva_to_pfn_slow(unsigned long addr, bool *async, bool write_fault,
-			   bool interruptible, bool *writable, kvm_pfn_t *pfn)
+                           bool interruptible, bool *writable, kvm_pfn_t *pfn)
 {
-	unsigned int flags = FOLL_HWPOISON;
-	struct page *page;
-	int npages;
+    unsigned int flags = FOLL_HWPOISON; // 初始化标志，包括硬件错误处理
+    struct page *page;
+    int npages;
 
-	might_sleep();
+    might_sleep(); // 提示编译器此函数可能会睡眠
 
-	if (writable)
-		*writable = write_fault;
+    // 根据write_fault设置writable的值
+    if (writable)
+        *writable = write_fault;
 
-	if (write_fault)
-		flags |= FOLL_WRITE;
-	if (async)
-		flags |= FOLL_NOWAIT;
-	if (interruptible)
-		flags |= FOLL_INTERRUPTIBLE;
+    // 根据参数设置FOLL_*标志
+    if (write_fault)
+        flags |= FOLL_WRITE; // 设置写标志
+    if (async)
+        flags |= FOLL_NOWAIT; // 设置异步标志
+    if (interruptible)
+        flags |= FOLL_INTERRUPTIBLE; // 设置可中断标志
 
-	npages = get_user_pages_unlocked(addr, 1, &page, flags);
-	if (npages != 1)
-		return npages;
+    // 获取用户空间页面，可能涉及I/O操作
+    npages = get_user_pages_unlocked(addr, 1, &page, flags);
+    if (npages != 1) // 如果获取页面失败，返回相应的错误码
+        return npages;
 
-	/* map read fault as writable if possible */
-	if (unlikely(!write_fault) && writable) {
-		struct page *wpage;
+    // 如果可能，将读故障映射为可写
+    if (unlikely(!write_fault) && writable) {
+        struct page *wpage;
 
-		if (get_user_page_fast_only(addr, FOLL_WRITE, &wpage)) {
-			*writable = true;
-			put_page(page);
-			page = wpage;
-		}
-	}
-	*pfn = page_to_pfn(page);
-	return npages;
+        if (get_user_page_fast_only(addr, FOLL_WRITE, &wpage)) {
+            *writable = true; // 更新writable值
+            put_page(page); // 释放原始页面
+            page = wpage; // 使用新的可写页面
+        }
+    }
+    // 将获取到的页面转换为pfn
+    *pfn = page_to_pfn(page);
+    return npages; // 返回成功获取到的页面数（应为1）
 }
 
 static bool vma_is_valid(struct vm_area_struct *vma, bool write_fault)
@@ -2610,166 +2615,171 @@ static int kvm_try_get_pfn(kvm_pfn_t pfn)
 	return get_page_unless_zero(page);
 }
 
+// 函数功能：处理IO映射或PFN映射的内存区域，将宿主机虚拟地址（hva）转换为宿主机物理页帧号（pfn）
 static int hva_to_pfn_remapped(struct vm_area_struct *vma,
-			       unsigned long addr, bool write_fault,
-			       bool *writable, kvm_pfn_t *p_pfn)
+                               unsigned long addr, bool write_fault,
+                               bool *writable, kvm_pfn_t *p_pfn)
 {
-	kvm_pfn_t pfn;
-	pte_t *ptep;
-	spinlock_t *ptl;
-	int r;
+    kvm_pfn_t pfn;
+    pte_t *ptep;
+    spinlock_t *ptl;
+    int r;
 
-	r = follow_pte(vma->vm_mm, addr, &ptep, &ptl);
-	if (r) {
-		/*
-		 * get_user_pages fails for VM_IO and VM_PFNMAP vmas and does
-		 * not call the fault handler, so do it here.
-		 */
-		bool unlocked = false;
-		r = fixup_user_fault(current->mm, addr,
-				     (write_fault ? FAULT_FLAG_WRITE : 0),
-				     &unlocked);
-		if (unlocked)
-			return -EAGAIN;
-		if (r)
-			return r;
+    // 跟踪PTE（页表条目）
+    r = follow_pte(vma->vm_mm, addr, &ptep, &ptl);
+    if (r) {
+        // 对于VM_IO和VM_PFNMAP类型的VMA，get_user_pages会失败，因此在这里调用故障处理程序
+        bool unlocked = false;
+        r = fixup_user_fault(current->mm, addr,
+                             (write_fault ? FAULT_FLAG_WRITE : 0),
+                             &unlocked);
+        if (unlocked)
+            return -EAGAIN;
+        if (r)
+            return r;
 
-		r = follow_pte(vma->vm_mm, addr, &ptep, &ptl);
-		if (r)
-			return r;
-	}
+        // 重新尝试跟踪PTE
+        r = follow_pte(vma->vm_mm, addr, &ptep, &ptl);
+        if (r)
+            return r;
+    }
 
-	if (write_fault && !pte_write(*ptep)) {
-		pfn = KVM_PFN_ERR_RO_FAULT;
-		goto out;
-	}
+    // 如果需要写操作且PTE不可写，返回错误
+    if (write_fault && !pte_write(*ptep)) {
+        pfn = KVM_PFN_ERR_RO_FAULT;
+        goto out;
+    }
 
-	if (writable)
-		*writable = pte_write(*ptep);
-	pfn = pte_pfn(*ptep);
+    // 如果提供了writable指针，根据PTE的可写属性设置它的值
+    if (writable)
+        *writable = pte_write(*ptep);
+    pfn = pte_pfn(*ptep); // 从PTE获取pfn
 
-	/*
-	 * Get a reference here because callers of *hva_to_pfn* and
-	 * *gfn_to_pfn* ultimately call kvm_release_pfn_clean on the
-	 * returned pfn.  This is only needed if the VMA has VM_MIXEDMAP
-	 * set, but the kvm_try_get_pfn/kvm_release_pfn_clean pair will
-	 * simply do nothing for reserved pfns.
-	 *
-	 * Whoever called remap_pfn_range is also going to call e.g.
-	 * unmap_mapping_range before the underlying pages are freed,
-	 * causing a call to our MMU notifier.
-	 *
-	 * Certain IO or PFNMAP mappings can be backed with valid
-	 * struct pages, but be allocated without refcounting e.g.,
-	 * tail pages of non-compound higher order allocations, which
-	 * would then underflow the refcount when the caller does the
-	 * required put_page. Don't allow those pages here.
-	 */ 
-	if (!kvm_try_get_pfn(pfn))
-		r = -EFAULT;
+    // 在此处获取引用，因为调用者最终会调用kvm_release_pfn_clean来释放返回的pfn
+    // 这仅在VMA具有VM_MIXEDMAP设置时需要，但对于保留的pfns，kvm_try_get_pfn/kvm_release_pfn_clean对不会做任何事情
+    if (!kvm_try_get_pfn(pfn))
+        r = -EFAULT;
 
 out:
-	pte_unmap_unlock(ptep, ptl);
-	*p_pfn = pfn;
+    // 解除PTE的映射并解锁
+    pte_unmap_unlock(ptep, ptl);
+    *p_pfn = pfn; // 将计算出的pfn赋值给输出参数
 
-	return r;
+    return r;
 }
-
-/*
- * Pin guest page in memory and return its pfn.
- * @addr: host virtual address which maps memory to the guest
- * @atomic: whether this function can sleep
- * @interruptible: whether the process can be interrupted by non-fatal signals
- * @async: whether this function need to wait IO complete if the
- *         host page is not in the memory
- * @write_fault: whether we should get a writable host page
- * @writable: whether it allows to map a writable host page for !@write_fault
+/**
+ * 将客户机页面固定在内存中并返回其pfn（物理页帧号）。
+ * @addr: 宿主机虚拟地址，用于将内存映射到客户机
+ * @atomic: 此函数是否可以睡眠
+ * @interruptible: 进程是否可以通过非致命信号中断
+ * @async: 如果宿主机页面不在内存中，此函数是否需要等待IO完成
+ * @write_fault: 是否应该获取一个可写的宿主机页面
+ * @writable: 对于!@write_fault的情况，是否允许映射一个可写的宿主机页面
  *
- * The function will map a writable host page for these two cases:
+ * 函数将在以下两种情况下映射一个可写的宿主机页面：
  * 1): @write_fault = true
- * 2): @write_fault = false && @writable, @writable will tell the caller
- *     whether the mapping is writable.
+ * 2): @write_fault = false && @writable, @writable将告诉调用者映射是否可写。
  */
+
 kvm_pfn_t hva_to_pfn(unsigned long addr, bool atomic, bool interruptible,
-		     bool *async, bool write_fault, bool *writable)
+                     bool *async, bool write_fault, bool *writable)
 {
-	struct vm_area_struct *vma;
-	kvm_pfn_t pfn;
-	int npages, r;
+    struct vm_area_struct *vma;
+    kvm_pfn_t pfn;
+    int npages, r;
 
-	/* we can do it either atomically or asynchronously, not both */
-	BUG_ON(atomic && async);
+    /* 我们可以原子地或异步地执行此操作，但不能同时执行两者 */
+    BUG_ON(atomic && async);
 
-	if (hva_to_pfn_fast(addr, write_fault, writable, &pfn))
-		return pfn;
+    // 尝试快速将hva转换为pfn
+    if (hva_to_pfn_fast(addr, write_fault, writable, &pfn))
+        return pfn;
 
-	if (atomic)
-		return KVM_PFN_ERR_FAULT;
+    // 如果需要原子操作，返回错误
+    if (atomic)
+        return KVM_PFN_ERR_FAULT;
 
-	npages = hva_to_pfn_slow(addr, async, write_fault, interruptible,
-				 writable, &pfn);
-	if (npages == 1)
-		return pfn;
-	if (npages == -EINTR)
-		return KVM_PFN_ERR_SIGPENDING;
+    // 慢速地将hva转换为pfn
+    npages = hva_to_pfn_slow(addr, async, write_fault, interruptible,
+                              writable, &pfn);
+    if (npages == 1)
+        return pfn;
+    if (npages == -EINTR)
+        return KVM_PFN_ERR_SIGPENDING;
 
-	mmap_read_lock(current->mm);
-	if (npages == -EHWPOISON ||
-	      (!async && check_user_page_hwpoison(addr))) {
-		pfn = KVM_PFN_ERR_HWPOISON;
-		goto exit;
-	}
+    // 加锁读取当前进程的内存映射信息
+    mmap_read_lock(current->mm);
+    // 检查硬件错误或其他错误情况
+    if (npages == -EHWPOISON ||
+        (!async && check_user_page_hwpoison(addr))) {
+        pfn = KVM_PFN_ERR_HWPOISON;
+        goto exit;
+    }
 
 retry:
-	vma = vma_lookup(current->mm, addr);
+    // 查找与给定地址关联的内存区域
+    vma = vma_lookup(current->mm, addr);
 
-	if (vma == NULL)
-		pfn = KVM_PFN_ERR_FAULT;
-	else if (vma->vm_flags & (VM_IO | VM_PFNMAP)) {
-		r = hva_to_pfn_remapped(vma, addr, write_fault, writable, &pfn);
-		if (r == -EAGAIN)
-			goto retry;
-		if (r < 0)
-			pfn = KVM_PFN_ERR_FAULT;
-	} else {
-		if (async && vma_is_valid(vma, write_fault))
-			*async = true;
-		pfn = KVM_PFN_ERR_FAULT;
-	}
+    // 如果没有找到对应的内存区域，返回错误
+    if (vma == NULL)
+        pfn = KVM_PFN_ERR_FAULT;
+    // 如果内存区域是IO映射或PFN映射，尝试特殊处理
+    else if (vma->vm_flags & (VM_IO | VM_PFNMAP)) {
+        r = hva_to_pfn_remapped(vma, addr, write_fault, writable, &pfn);
+        if (r == -EAGAIN)
+            goto retry;
+        if (r < 0)
+            pfn = KVM_PFN_ERR_FAULT;
+    } else {
+        // 如果需要异步操作且内存区域有效，设置async标志
+        if (async && vma_is_valid(vma, write_fault))
+            *async = true;
+        pfn = KVM_PFN_ERR_FAULT;
+    }
 exit:
-	mmap_read_unlock(current->mm);
-	return pfn;
+    // 解锁内存映射信息
+    mmap_read_unlock(current->mm);
+    return pfn;
 }
 
+// 函数原型：kvm_pfn_t __gfn_to_pfn_memslot(const struct kvm_memory_slot *slot, gfn_t gfn, bool atomic, bool interruptible, bool *async, bool write_fault, bool *writable, hva_t *hva)
+// 函数功能：将给定的内存槽(slot)中的gfn（guest物理页帧号）转换为宿主机的pfn（物理页帧号）
 kvm_pfn_t __gfn_to_pfn_memslot(const struct kvm_memory_slot *slot, gfn_t gfn,
-			       bool atomic, bool interruptible, bool *async,
-			       bool write_fault, bool *writable, hva_t *hva)
+                   bool atomic, bool interruptible, bool *async,
+                   bool write_fault, bool *writable, hva_t *hva)
 {
-	unsigned long addr = __gfn_to_hva_many(slot, gfn, NULL, write_fault);
+    // 将gfn转换为hva（宿主机虚拟地址），并检查是否存在写错误
+    unsigned long addr = __gfn_to_hva_many(slot, gfn, NULL, write_fault);
 
-	if (hva)
-		*hva = addr;
+    // 如果提供了hva指针，将转换后的hva值赋给它
+    if (hva)
+        *hva = addr;
 
-	if (addr == KVM_HVA_ERR_RO_BAD) {
-		if (writable)
-			*writable = false;
-		return KVM_PFN_ERR_RO_FAULT;
-	}
+    // 如果hva值为KVM_HVA_ERR_RO_BAD，表示尝试访问只读内存区域的写操作
+    if (addr == KVM_HVA_ERR_RO_BAD) {
+        // 如果提供了writable指针，将其设置为false
+        if (writable)
+            *writable = false;
+        // 返回错误码KVM_PFN_ERR_RO_FAULT
+        return KVM_PFN_ERR_RO_FAULT;
+    }
 
-	if (kvm_is_error_hva(addr)) {
-		if (writable)
-			*writable = false;
-		return KVM_PFN_NOSLOT;
-	}
+    // 如果hva值表示一个错误（例如映射不存在），返回错误码KVM_PFN_NOSLOT
+    if (kvm_is_error_hva(addr)) {
+        if (writable)
+            *writable = false;
+        return KVM_PFN_NOSLOT;
+    }
 
-	/* Do not map writable pfn in the readonly memslot. */
-	if (writable && memslot_is_readonly(slot)) {
-		*writable = false;
-		writable = NULL;
-	}
+    // 如果提供了writable指针且内存槽是只读的，将writable设置为false，并将writable指针置空
+    if (writable && memslot_is_readonly(slot)) {
+        *writable = false;
+        writable = NULL;
+    }
 
-	return hva_to_pfn(addr, atomic, interruptible, async, write_fault,
-			  writable);
+    // 将hva转换为pfn，并根据参数设置atomic、interruptible、async和write_fault等属性
+    return hva_to_pfn(addr, atomic, interruptible, async, write_fault,
+              writable);
 }
 EXPORT_SYMBOL_GPL(__gfn_to_pfn_memslot);
 
