@@ -12999,7 +12999,7 @@ bool kvm_arch_async_page_not_present(struct kvm_vcpu *vcpu,
 
     // 如果可以处理异步页表错误并且满足其他条件，则注入页面错误
     if (kvm_can_deliver_async_pf(vcpu) &&
-        !apf_put_user_notpresent(vcpu)) {
+        !apf_put_user_notpresent(vcpu)) {  //注入page not present
         fault.vector = PF_VECTOR; // 设置页面错误的中断向量
         fault.error_code_valid = true; // 错误代码有效
         fault.error_code = 0; // 设置错误代码
