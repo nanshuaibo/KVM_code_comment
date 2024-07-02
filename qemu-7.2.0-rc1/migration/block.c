@@ -1025,12 +1025,14 @@ static SaveVMHandlers savevm_block_handlers = {
     .is_active = block_is_active,
 };
 
+//block相关的迁移初始化
 void blk_mig_init(void)
 {
     QSIMPLEQ_INIT(&block_mig_state.bmds_list);
     QSIMPLEQ_INIT(&block_mig_state.blk_list);
     qemu_mutex_init(&block_mig_state.lock);
 
+    //注册相关回调函数
     register_savevm_live("block", 0, 1, &savevm_block_handlers,
                          &block_mig_state);
 }

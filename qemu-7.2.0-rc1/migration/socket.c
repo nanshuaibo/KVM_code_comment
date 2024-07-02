@@ -69,8 +69,8 @@ int socket_send_channel_destroy(QIOChannel *send)
 }
 
 struct SocketConnectData {
-    MigrationState *s;
-    char *hostname;
+    MigrationState *s; //迁移状态信息
+    char *hostname; //迁移母机
 };
 
 static void socket_connect_data_free(void *opaque)
@@ -97,12 +97,15 @@ static void socket_outgoing_migration(QIOTask *task,
 
     trace_migration_socket_outgoing_connected(data->hostname);
 
+    // 如果启用了零拷贝发送功能，但检测不到主机内核支持该功能，则设置错误
     if (migrate_use_zero_copy_send() &&
         !qio_channel_has_feature(sioc, QIO_CHANNEL_FEATURE_WRITE_ZERO_COPY)) {
         error_setg(&err, "Zero copy send feature not detected in host kernel");
     }
 
 out:
+
+    //建立迁移通道
     migration_channel_connect(data->s, sioc, data->hostname, err);
     object_unref(OBJECT(sioc));
 }
@@ -128,8 +131,7 @@ socket_start_outgoing_migration_internal(MigrationState *s,
     qio_channel_set_name(QIO_CHANNEL(sioc), "migration-socket-outgoing");
     qio_channel_socket_connect_async(sioc,
                                      saddr,
-                                     socket_outgoing_migration,
-                                     data,
+                                     socket_outgoing_migration, //回调函数，当迁移套接字创建成功时调用
                                      socket_connect_data_free,
                                      NULL);
 }
@@ -139,7 +141,7 @@ void socket_start_outgoing_migration(MigrationState *s,
                                      Error **errp)
 {
     Error *err = NULL;
-    SocketAddress *saddr = socket_parse(str, &err);
+    SocketAddress *saddr = socket_parse(str, &err); //解析uri类型
     if (!err) {
         socket_start_outgoing_migration_internal(s, saddr, &err);
     }
@@ -215,9 +217,9 @@ socket_start_incoming_migration_internal(SocketAddress *saddr,
 void socket_start_incoming_migration(const char *str, Error **errp)
 {
     Error *err = NULL;
-    SocketAddress *saddr = socket_parse(str, &err);
+    SocketAddress *saddr = socket_parse(str, &err);// 解析传入的uri，建立连接，获取SocketAddress对象
     if (!err) {
-        socket_start_incoming_migration_internal(saddr, &err);
+        socket_start_incoming_migration_internal(saddr, &err); //开始接受迁移数据
     }
     qapi_free_SocketAddress(saddr);
     error_propagate(errp, err);

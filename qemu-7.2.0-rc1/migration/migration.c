@@ -2153,7 +2153,7 @@ void migrate_init(MigrationState *s)
     s->error = NULL;
     s->hostname = NULL;
 
-    migrate_set_state(&s->state, MIGRATION_STATUS_NONE, MIGRATION_STATUS_SETUP);
+    migrate_set_state(&s->state, MIGRATION_STATUS_NONE, MIGRATION_STATUS_SETUP); //改变迁移状态
 
     s->start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     s->total_time = 0;
@@ -2293,7 +2293,7 @@ bool migration_is_blocked(Error **errp)
     return false;
 }
 
-/* Returns true if continue to migrate, or false if error detected */
+/* 如果继续迁移则返回true，如果检测到错误则返回false */
 static bool migrate_prepare(MigrationState *s, bool blk, bool blk_inc,
                             bool resume, Error **errp)
 {
@@ -2370,7 +2370,7 @@ static bool migrate_prepare(MigrationState *s, bool blk, bool blk_inc,
         migrate_set_block_incremental(s, true);
     }
 
-    migrate_init(s);
+    migrate_init(s);//对migrationState结构的初始化，这里会做迁移状态的变更
     /*
      * set ram_counters compression_counters memory to zero for a
      * new migration
@@ -2381,11 +2381,30 @@ static bool migrate_prepare(MigrationState *s, bool blk, bool blk_inc,
     return true;
 }
 
+
+/*
+ * qmp_migrate() - 启动QEMU虚拟机迁移的函数
+ *
+ * @uri: (const char *) 一个字符串，表示迁移的目标地址和协议，例如 "tcp://192.168.1.10:4444"、"unix:///tmp/migration.sock" 等
+ * @has_blk: (bool) 表示是否提供了块设备迁移选项
+ * @blk: (bool) 如果 has_blk 为真，表示确实需要迁移块设备
+ * @has_inc: (bool) 表示是否提供了增量迁移选项
+ * @inc: (bool) 如果 has_inc 为真，表示需要进行增量迁移
+ * @has_detach: (bool) 表示是否提供了分离选项
+ * @detach: (bool) 如果 has_detach 为真，表示需要在迁移过程中分离设备
+ * @has_resume: (bool) 表示是否提供了恢复选项
+ * @resume: (bool) 如果 has_resume 为真，表示需要在迁移过程中恢复虚拟机
+ * @errp: (Error **) 一个指向错误对象的指针，用于接收函数执行过程中产生的错误信息
+ * 热迁移有两种发起方式，一种是直接在QEMU中QEMU monitor发起，另一种就是通过libvirt来发起。
+ * 两者最终都会调用qmp接口来走到QEMU的热迁移实现中。
+ */
 void qmp_migrate(const char *uri, bool has_blk, bool blk,
                  bool has_inc, bool inc, bool has_detach, bool detach,
                  bool has_resume, bool resume, Error **errp)
 {
     Error *local_err = NULL;
+    //得到一个默认的迁移状态信息，MigrationState结构包含了迁移过程用到的信息，
+    //比如带宽，传输速率，停机时间，迁移的setup时间，迭代时间，完成时间等
     MigrationState *s = migrate_get_current();
     const char *p = NULL;
 
@@ -2402,6 +2421,7 @@ void qmp_migrate(const char *uri, bool has_blk, bool blk,
     }
 
     migrate_protocol_allow_multi_channels(false);
+    //根据uri传输的协议格式，选择不同的传输接口
     if (strstart(uri, "tcp:", &p) ||
         strstart(uri, "unix:", NULL) ||
         strstart(uri, "vsock:", NULL)) {
@@ -3296,14 +3316,14 @@ static void migration_completion(MigrationState *s)
 
     if (s->state == MIGRATION_STATUS_ACTIVE) {
         qemu_mutex_lock_iothread();
-        s->downtime_start = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+        s->downtime_start = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);//宕机开始时间
         qemu_system_wakeup_request(QEMU_WAKEUP_REASON_OTHER, NULL);
         s->vm_was_running = runstate_is_running();
         ret = global_state_store();
 
         if (!ret) {
             bool inactivate = !migrate_colo_enabled();
-            ret = vm_stop_force_state(RUN_STATE_FINISH_MIGRATE);
+            ret = vm_stop_force_state(RUN_STATE_FINISH_MIGRATE);//强制使源端虚拟机停止，并设置状态为RUN_STATE_FINISH_MIGRATE
             trace_migration_completion_vm_stop(ret);
             if (ret >= 0) {
                 ret = migration_maybe_pause(s, &current_active_state,
@@ -3312,7 +3332,7 @@ static void migration_completion(MigrationState *s)
             if (ret >= 0) {
                 qemu_file_set_rate_limit(s->to_dst_file, INT64_MAX);
                 ret = qemu_savevm_state_complete_precopy(s->to_dst_file, false,
-                                                         inactivate);
+                                                         inactivate);  //完成的最后传输数据操作
             }
             if (inactivate && ret >= 0) {
                 s->block_inactive = true;
@@ -3651,11 +3671,12 @@ static uint64_t migration_total_bytes(MigrationState *s)
 
 static void migration_calculate_complete(MigrationState *s)
 {
-    uint64_t bytes = migration_total_bytes(s);
-    int64_t end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+    uint64_t bytes = migration_total_bytes(s); //迁移传输总量
+    int64_t end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);//结束时间
     int64_t transfer_time;
 
-    s->total_time = end_time - s->start_time;
+    s->total_time = end_time - s->start_time;//迁移耗时
+    // 如果downtime未设置，说明是预拷贝迁移
     if (!s->downtime) {
         /*
          * It's still not set, so we are precopy migration.  For
@@ -3664,9 +3685,9 @@ static void migration_calculate_complete(MigrationState *s)
         s->downtime = end_time - s->downtime_start;
     }
 
-    transfer_time = s->total_time - s->setup_time;
+    transfer_time = s->total_time - s->setup_time;//实际迁移耗时
     if (transfer_time) {
-        s->mbps = ((double) bytes * 8.0) / transfer_time / 1000;
+        s->mbps = ((double) bytes * 8.0) / transfer_time / 1000;//迁移带宽
     }
 }
 
@@ -3693,9 +3714,9 @@ static void migration_update_counters(MigrationState *s,
     }
 
     current_bytes = migration_total_bytes(s);
-    transferred = current_bytes - s->iteration_initial_bytes;
-    time_spent = current_time - s->iteration_start_time;
-    bandwidth = (double)transferred / time_spent;
+    transferred = current_bytes - s->iteration_initial_bytes; //已经发送的数据量
+    time_spent = current_time - s->iteration_start_time; //从setup到现在花费的时间
+    bandwidth = (double)transferred / time_spent; //通过传输的数据量除于花费的时间就可以获取到传输的带宽值
     s->threshold_size = bandwidth * s->parameters.downtime_limit;
 
     s->mbps = (((double) transferred * 8.0) /
@@ -3729,15 +3750,19 @@ typedef enum {
     MIG_ITERATE_BREAK,          /* Break the loop */
 } MigIterateState;
 
-/*
- * Return true if continue to the next iteration directly, false
- * otherwise.
+/**
+ * migration_iteration_run: 执行迁移迭代
+ *
+ * 如果继续直接进行下一次迭代，则返回 true，否则返回 false。
+ *
+ * @s: 迁移状态信息
  */
 static MigIterateState migration_iteration_run(MigrationState *s)
 {
     uint64_t pending_size, pend_pre, pend_compat, pend_post;
     bool in_postcopy = s->state == MIGRATION_STATUS_POSTCOPY_ACTIVE;
 
+    // 获取待传输的数据量
     qemu_savevm_state_pending(s->to_dst_file, s->threshold_size, &pend_pre,
                               &pend_compat, &pend_post);
     pending_size = pend_pre + pend_compat + pend_post;
@@ -3745,19 +3770,22 @@ static MigIterateState migration_iteration_run(MigrationState *s)
     trace_migrate_pending(pending_size, s->threshold_size,
                           pend_pre, pend_compat, pend_post);
 
+    // 如果待传输数据量大于等于阈值
     if (pending_size && pending_size >= s->threshold_size) {
-        /* Still a significant amount to transfer */
+        // 如果不在 postcopy 阶段且 pend_pre 小于等于阈值，并且已设置开始 postcopy
         if (!in_postcopy && pend_pre <= s->threshold_size &&
             qatomic_read(&s->start_postcopy)) {
+            // 尝试启动 postcopy
             if (postcopy_start(s)) {
                 error_report("%s: postcopy failed to start", __func__);
             }
             return MIG_ITERATE_SKIP;
         }
-        /* Just another iteration step */
+        // 只是另一个迭代步骤
         qemu_savevm_state_iterate(s->to_dst_file, in_postcopy);
-    } else {
+    } else { //剩余的脏页已经可以在一次传输中传输完成了
         trace_migration_thread_low_pending(pending_size);
+        // 完成迁移
         migration_completion(s);
         return MIG_ITERATE_BREAK;
     }
@@ -3773,7 +3801,7 @@ static void migration_iteration_finish(MigrationState *s)
     qemu_mutex_lock_iothread();
     switch (s->state) {
     case MIGRATION_STATUS_COMPLETED:
-        migration_calculate_complete(s);
+        migration_calculate_complete(s);//计算迁移中的耗时、带宽等
         runstate_set(RUN_STATE_POSTMIGRATE);
         break;
     case MIGRATION_STATUS_COLO:
@@ -3932,8 +3960,11 @@ static void qemu_savevm_wait_unplug(MigrationState *s, int old_state,
 }
 
 /*
- * Master migration thread on the source VM.
- * It drives the migration and pumps the data down the outgoing channel.
+ * 源虚拟机上的主迁移线程。
+ * 它驱动迁移并将数据通过外出通道传输。
+ * 热迁移的setup阶段，也就是迁移的准备阶段
+ * 热迁移的iterate阶段，数据持续迭代阶段
+ * 热迁移的完成阶段
  */
 static void *migration_thread(void *opaque)
 {
@@ -3986,7 +4017,7 @@ static void *migration_thread(void *opaque)
 
     while (migration_is_active(s)) {
         if (urgent || !qemu_file_rate_limit(s->to_dst_file)) {
-            MigIterateState iter_state = migration_iteration_run(s);
+            MigIterateState iter_state = migration_iteration_run(s); //迭代传输
             if (iter_state == MIG_ITERATE_SKIP) {
                 continue;
             } else if (iter_state == MIG_ITERATE_BREAK) {
@@ -4015,7 +4046,7 @@ static void *migration_thread(void *opaque)
     }
 
     trace_migration_thread_after_loop();
-    migration_iteration_finish(s);
+    migration_iteration_finish(s);//迭代传输完成
     object_unref(OBJECT(s));
     rcu_unregister_thread();
     return NULL;
@@ -4195,7 +4226,7 @@ void migrate_fd_connect(MigrationState *s, Error *error_in)
      */
     migrate_error_free(s);
 
-    s->expected_downtime = s->parameters.downtime_limit;
+    s->expected_downtime = s->parameters.downtime_limit; //期望停机时间
     if (resume) {
         assert(s->cleanup_bh);
     } else {
@@ -4222,7 +4253,7 @@ void migrate_fd_connect(MigrationState *s, Error *error_in)
     if (resume) {
         /* This is a resumed migration */
         rate_limit = s->parameters.max_postcopy_bandwidth /
-            XFER_LIMIT_RATIO;
+            XFER_LIMIT_RATIO; //postcopy拷贝速率
     } else {
         /* This is a fresh new migration */
         rate_limit = s->parameters.max_bandwidth / XFER_LIMIT_RATIO;
@@ -4273,14 +4304,14 @@ void migrate_fd_connect(MigrationState *s, Error *error_in)
         return;
     }
 
-    if (migrate_background_snapshot()) {
-        qemu_thread_create(&s->thread, "bg_snapshot",
+    if (migrate_background_snapshot()) { 
+        qemu_thread_create(&s->thread, "bg_snapshot", //创建虚拟机的快照进行迁移的回调函数
                 bg_migration_thread, s, QEMU_THREAD_JOINABLE);
-    } else {
-        qemu_thread_create(&s->thread, "live_migration",
+    } else { 
+        qemu_thread_create(&s->thread, "live_migration", //热迁移回调函数
                 migration_thread, s, QEMU_THREAD_JOINABLE);
     }
-    s->migration_thread_running = true;
+    s->migration_thread_running = true; //设置标志位，代表迁移线程开始运行
 }
 
 void migration_global_dump(Monitor *mon)

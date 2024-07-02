@@ -208,170 +208,135 @@ struct MigrationClass {
 };
 
 struct MigrationState {
-    /*< private >*/
+   < private >*/
     DeviceState parent_obj;
 
-    /*< public >*/
-    QemuThread thread;
-    QEMUBH *vm_start_bh;
-    QEMUBH *cleanup_bh;
-    /* Protected by qemu_file_lock */
-    QEMUFile *to_dst_file;
-    /* Postcopy specific transfer channel */
-    QEMUFile *postcopy_qemufile_src;
-    /*
-     * It is posted when the preempt channel is established.  Note: this is
-     * used for both the start or recover of a postcopy migration.  We'll
-     * post to this sem every time a new preempt channel is created in the
-     * main thread, and we keep post() and wait() in pair.
-     */
+   < public >*/
+    QemuThread thread;               // 迁移线程
+    QEMUBH *vm_start_bh;             // 虚拟机启动回调
+    QEMUBH *cleanup_bh;              // 清理回调
+    /* 受 qemu_file_lock 保护 */
+    QEMUFile *to_dst_file;           // 目标文件
+    /* Postcopy 特定的传输通道 */
+    QEMUFile *postcopy_qemufile_src; 
+    /* 当建立抢占通道时发出信号量 */
     QemuSemaphore postcopy_qemufile_src_sem;
-    QIOChannelBuffer *bioc;
-    /*
-     * Protects to_dst_file/from_dst_file pointers.  We need to make sure we
-     * won't yield or hang during the critical section, since this lock will be
-     * used in OOB command handler.
-     */
+    QIOChannelBuffer *bioc;          // I/O 通道缓冲区
+    /* 保护 to_dst_file/from_dst_file 指针 */
     QemuMutex qemu_file_lock;
 
-    /*
-     * Used to allow urgent requests to override rate limiting.
-     */
+    /* 允许紧急请求覆盖速率限制 */
     QemuSemaphore rate_limit_sem;
 
-    /* pages already send at the beginning of current iteration */
+    /* 当前迭代开始时已发送的页面数 */
     uint64_t iteration_initial_pages;
 
-    /* pages transferred per second */
+    /* 每秒传输的页面数 */
     double pages_per_second;
 
-    /* bytes already send at the beginning of current iteration */
+    /* 当前迭代开始时已发送的字节数 */
     uint64_t iteration_initial_bytes;
-    /* time at the start of current iteration */
+    /* 当前迭代开始的时间 */
     int64_t iteration_start_time;
-    /*
-     * The final stage happens when the remaining data is smaller than
-     * this threshold; it's calculated from the requested downtime and
-     * measured bandwidth
-     */
+    /* 最后阶段发生在剩余数据小于此阈值时 */
     int64_t threshold_size;
 
-    /* params from 'migrate-set-parameters' */
+    /* 来自 'migrate-set-parameters' 的参数 */
     MigrationParameters parameters;
 
     int state;
 
-    /* State related to return path */
+    /* 与返回路径相关的状态 */
     struct {
-        /* Protected by qemu_file_lock */
-        QEMUFile     *from_dst_file;
-        QemuThread    rp_thread;
-        bool          error;
-        /*
-         * We can also check non-zero of rp_thread, but there's no "official"
-         * way to do this, so this bool makes it slightly more elegant.
-         * Checking from_dst_file for this is racy because from_dst_file will
-         * be cleared in the rp_thread!
+        /* 受 qemu_file_lock 保护 */
+        QEMUFile *from_dst_file;       // 源文件
+        QemuThread rp_thread;          // 返回路径线程
+        bool error;                    // 是否发生错误
+        /* 检查 rp_thread 是否非零也可以，但没有官方的方法可以做到这一点，所以这个布尔值让它更优雅。
+         * 检查 from_dst_file 是否为这个是具有竞争性的，因为 from_dst_file 会在 rp_thread 中被清除！
          */
-        bool          rp_thread_created;
-        QemuSemaphore rp_sem;
+        bool rp_thread_created;
+        QemuSemaphore rp_sem;          // 返回路径信号量
     } rp_state;
 
-    double mbps;
-    /* Timestamp when recent migration starts (ms) */
+    double mbps;                      // 迁移速率（Mbps）
+    /* 最近迁移开始的时间戳（毫秒） */
     int64_t start_time;
-    /* Total time used by latest migration (ms) */
+    /* 最新迁移所用的总时间（毫秒） */
     int64_t total_time;
-    /* Timestamp when VM is down (ms) to migrate the last stuff */
+    /* 虚拟机关闭以迁移最后一些数据的时间戳（毫秒） */
     int64_t downtime_start;
     int64_t downtime;
     int64_t expected_downtime;
     bool enabled_capabilities[MIGRATION_CAPABILITY__MAX];
     int64_t setup_time;
-    /*
-     * Whether guest was running when we enter the completion stage.
-     * If migration is interrupted by any reason, we need to continue
-     * running the guest on source.
+    /* 我们进入完成阶段时，客户机是否正在运行
+     * 如果迁移因任何原因中断，我们需要继续在源上运行客户机。
      */
     bool vm_was_running;
 
-    /* Flag set once the migration has been asked to enter postcopy */
+    /* 一旦迁移被要求进入 postcopy 阶段，就会设置此标志 */
     bool start_postcopy;
-    /* Flag set after postcopy has sent the device state */
+    /* 在 postcopy 发送设备状态后设置的标志 */
     bool postcopy_after_devices;
 
-    /* Flag set once the migration thread is running (and needs joining) */
+    /* 一旦迁移线程运行（并需要加入），就会设置此标志 */
     bool migration_thread_running;
 
-    /* Flag set once the migration thread called bdrv_inactivate_all */
+    /* 一旦迁移线程调用 bdrv_inactivate_all，就会设置此标志 */
     bool block_inactive;
 
-    /* Migration is waiting for guest to unplug device */
+    /* 迁移正在等待客户机拔出设备 */
     QemuSemaphore wait_unplug_sem;
 
-    /* Migration is paused due to pause-before-switchover */
+    /* 由于 pause-before-switchover，迁移被暂停 */
     QemuSemaphore pause_sem;
 
-    /* The semaphore is used to notify COLO thread that failover is finished */
+    /* 该信号量用于通知 COLO 线程故障切换已完成 */
     QemuSemaphore colo_exit_sem;
 
-    /* The event is used to notify COLO thread to do checkpoint */
+    /* 该事件用于通知 COLO 线程进行检查点操作 */
     QemuEvent colo_checkpoint_event;
     int64_t colo_checkpoint_time;
     QEMUTimer *colo_delay_timer;
 
-    /* The first error that has occurred.
-       We used the mutex to be able to return the 1st error message */
+    /* 发生的第一个错误
+     * 我们使用互斥锁来能够返回第一条错误消息 */
     Error *error;
-    /* mutex to protect errp */
+    /* 保护 errp 的互斥锁 */
     QemuMutex error_mutex;
 
-    /* Do we have to clean up -b/-i from old migrate parameters */
-    /* This feature is deprecated and will be removed */
+    /* 我们是否需要清理来自旧迁移参数的 -b/-i */
+    /* 此功能已被弃用并将被删除 */
     bool must_remove_block_options;
 
-    /*
-     * Global switch on whether we need to store the global state
-     * during migration.
-     */
+    /* 我们是否需要存储全局状态
+     * 在迁移期间 */
     bool store_global_state;
 
-    /* Whether we send QEMU_VM_CONFIGURATION during migration */
+    /* 我们是否在迁移期间发送 QEMU_VM_CONFIGURATION */
     bool send_configuration;
-    /* Whether we send section footer during migration */
+    /* 我们是否在迁移期间发送节尾 */
     bool send_section_footer;
-    /*
-     * Whether we allow break sending huge pages when postcopy preempt is
-     * enabled.  When disabled, we won't interrupt precopy within sending a
-     * host huge page, which is the old behavior of vanilla postcopy.
-     * NOTE: this parameter is ignored if postcopy preempt is not enabled.
+    /* 当启用 postcopy preempt 时，我们是否允许在发送主机大页时中断发送巨大页面
+     * 当禁用时，我们在发送主机大页时不会中断 precopy，这是 vanilla postcopy 的旧行为
+     * 注意：如果未启用 postcopy preempt，则忽略此参数。
      */
     bool postcopy_preempt_break_huge;
 
-    /* Needed by postcopy-pause state */
+    /* postcopy-pause 状态所需 */
     QemuSemaphore postcopy_pause_sem;
     QemuSemaphore postcopy_pause_rp_sem;
-    /*
-     * Whether we abort the migration if decompression errors are
-     * detected at the destination. It is left at false for qemu
-     * older than 3.0, since only newer qemu sends streams that
-     * do not trigger spurious decompression errors.
-     */
+    /* 我们是否中止迁移，如果在目的地检测到解压缩错误 */
     bool decompress_error_check;
 
-    /*
-     * This decides the size of guest memory chunk that will be used
-     * to track dirty bitmap clearing.  The size of memory chunk will
-     * be GUEST_PAGE_SIZE << N.  Say, N=0 means we will clear dirty
-     * bitmap for each page to send (1<<0=1); N=10 means we will clear
-     * dirty bitmap only once for 1<<10=1K continuous guest pages
-     * (which is in 4M chunk).
+    /* 这决定了用于跟踪脏位图清除的客人内存块的大小
+     * 内存块的大小将是 GUEST_PAGE_SIZE << N。比如，N=0 表示我们将为每个要发送的页面清除脏位图（1<<0=1）；N=10 表示我们只为 1<<10=1K 连续客人页面清除一次脏位图
+     * （这是在 4M 块中）。
      */
     uint8_t clear_bitmap_shift;
 
-    /*
-     * This save hostname when out-going migration starts
-     */
+    /* 当外出迁移开始时保存的主机名 */
     char *hostname;
 };
 

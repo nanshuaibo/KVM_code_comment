@@ -17,56 +17,49 @@
 #include "hw/vmstate-if.h"
 
 typedef struct SaveVMHandlers {
-    /* This runs inside the iothread lock.  */
+    /* 在iothread锁内部运行 */
     SaveStateHandler *save_state;
 
     void (*save_cleanup)(void *opaque);
     int (*save_live_complete_postcopy)(QEMUFile *f, void *opaque);
     int (*save_live_complete_precopy)(QEMUFile *f, void *opaque);
 
-    /* This runs both outside and inside the iothread lock.  */
+    /* 在iothread锁外部和内部运行 */
     bool (*is_active)(void *opaque);
     bool (*has_postcopy)(void *opaque);
 
     /* is_active_iterate
-     * If it is not NULL then qemu_savevm_state_iterate will skip iteration if
-     * it returns false. For example, it is needed for only-postcopy-states,
-     * which needs to be handled by qemu_savevm_state_setup and
-     * qemu_savevm_state_pending, but do not need iterations until not in
-     * postcopy stage.
+     * 如果它不为NULL，那么qemu_savevm_state_iterate将在返回false时跳过迭代。
+     * 例如，对于仅后复制状态，需要在qemu_savevm_state_setup和qemu_savevm_state_pending中处理，
+     * 但不需要迭代，直到不在postcopy阶段。
      */
     bool (*is_active_iterate)(void *opaque);
 
-    /* This runs outside the iothread lock in the migration case, and
-     * within the lock in the savevm case.  The callback had better only
-     * use data that is local to the migration thread or protected
-     * by other locks.
+    /* 在迁移情况下，此回调在iothread锁外部运行，
+     * 在savevm情况下，它在锁内部运行。
+     * 回调最好只使用迁移线程局部数据或受其他锁保护的数据。
      */
     int (*save_live_iterate)(QEMUFile *f, void *opaque);
 
-    /* This runs outside the iothread lock!  */
+    /* 这个在iothread锁外部运行！ */
     int (*save_setup)(QEMUFile *f, void *opaque);
     void (*save_live_pending)(QEMUFile *f, void *opaque,
                               uint64_t threshold_size,
                               uint64_t *res_precopy_only,
                               uint64_t *res_compatible,
                               uint64_t *res_postcopy_only);
-    /* Note for save_live_pending:
-     * - res_precopy_only is for data which must be migrated in precopy phase
-     *     or in stopped state, in other words - before target vm start
-     * - res_compatible is for data which may be migrated in any phase
-     * - res_postcopy_only is for data which must be migrated in postcopy phase
-     *     or in stopped state, in other words - after source vm stop
+    /* 关于save_live_pending的注释：
+     * - res_precopy_only是必须在precopy阶段或停止状态下迁移的数据，换句话说，是在目标虚拟机启动之前
+     * - res_compatible是可以在任何阶段迁移的数据
+     * - res_postcopy_only是必须在postcopy阶段或停止状态下迁移的数据，换句话说，是在源虚拟机停止之后
      *
-     * Sum of res_postcopy_only, res_compatible and res_postcopy_only is the
-     * whole amount of pending data.
+     * res_postcopy_only、res_compatible和res_postcopy_only的总和是待迁移数据的总量。
      */
-
 
     LoadStateHandler *load_state;
     int (*load_setup)(QEMUFile *f, void *opaque);
     int (*load_cleanup)(void *opaque);
-    /* Called when postcopy migration wants to resume from failure */
+    /* 当后复制迁移想要从失败中恢复时调用 */
     int (*resume_prepare)(MigrationState *s, void *opaque);
 } SaveVMHandlers;
 

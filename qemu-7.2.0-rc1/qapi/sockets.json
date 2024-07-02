@@ -196,7 +196,7 @@
 { 'union': 'SocketAddress',
   'base': { 'type': 'SocketAddressType' },
   'discriminator': 'type',
-  'data': { 'inet': 'InetSocketAddress',
-            'unix': 'UnixSocketAddress',
-            'vsock': 'VsockSocketAddress',
-            'fd': 'String' } }
+  'data': { 'inet': 'InetSocketAddress',    # IPv4 或 IPv6 传输地址
+            'unix': 'UnixSocketAddress',     # Unix 域套接字地址
+            'vsock': 'VsockSocketAddress',   # VSOCK（虚拟套接字）地址
+            'fd': 'String'                  # 文件描述符，可以是命名套接字地址 } }
