@@ -4595,6 +4595,7 @@ static int kvm_get_nested_state(X86CPU *cpu)
     return ret;
 }
 
+//从内存中恢复VCPU的寄存器信息,恢复完成之后等待启动目的端的虚拟机
 int kvm_arch_put_registers(CPUState *cpu, int level)
 {
     X86CPU *x86_cpu = X86_CPU(cpu);

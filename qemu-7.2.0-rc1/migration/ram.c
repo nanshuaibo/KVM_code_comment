@@ -3510,50 +3510,63 @@ static int load_xbzrle(QEMUFile *f, ram_addr_t addr, void *host)
 }
 
 /**
- * ram_block_from_stream: read a RAMBlock id from the migration stream
+ * ram_block_from_stream: 从迁移流中读取一个RAMBlock id
  *
- * Must be called from within a rcu critical section.
+ * 必须从rcu临界区内部调用。
  *
- * Returns a pointer from within the RCU-protected ram_list.
+ * 返回一个指向RCU保护ram_list内部的指针。
  *
- * @mis: the migration incoming state pointer
- * @f: QEMUFile where to read the data from
- * @flags: Page flags (mostly to see if it's a continuation of previous block)
- * @channel: the channel we're using
+ * @mis: 迁移传入状态指针
+ * @f: 从中读取数据的QEMUFile
+ * @flags: 页面标志（主要用于查看是否是上一个块的延续）
+ * @channel: 我们正在使用的通道
  */
 static inline RAMBlock *ram_block_from_stream(MigrationIncomingState *mis,
-                                              QEMUFile *f, int flags,
-                                              int channel)
+        QEMUFile *f, int flags,
+        int channel)
 {
+    // 获取mis->last_recv_block[channel]指向的RAMBlock
     RAMBlock *block = mis->last_recv_block[channel];
+    // 定义一个长度为256的字符数组id，用于存储从迁移流中读取的RAMBlock id
     char id[256];
-    uint8_t len;
+    // 定义一个无符号8位整型变量len，用于存储id的长度
 
+    // 如果flags包含RAM_SAVE_FLAG_CONTINUE标志，表示这是上一个块的延续
     if (flags & RAM_SAVE_FLAG_CONTINUE) {
+        // 如果没有block，说明迁移流有问题，报告错误并返回NULL
         if (!block) {
             error_report("Ack, bad migration stream!");
             return NULL;
         }
+        // 返回block
         return block;
     }
 
+    // 从QEMUFile中读取id的长度
     len = qemu_get_byte(f);
+    // 从QEMUFile中读取id，并存入id数组
     qemu_get_buffer(f, (uint8_t *)id, len);
+    // 在id末尾添加字符串结束符'\0'
     id[len] = 0;
 
+    // 根据id查找对应的RAMBlock
     block = qemu_ram_block_by_name(id);
+    // 如果找不到block，报告错误并返回NULL
     if (!block) {
         error_report("Can't find block %s", id);
         return NULL;
     }
 
+    // 如果block被忽略，报告错误并返回NULL
     if (ramblock_is_ignored(block)) {
         error_report("block %s should not be migrated !", id);
         return NULL;
     }
 
+    // 将找到的block赋值给mis->last_recv_block[channel]
     mis->last_recv_block[channel] = block;
 
+    // 返回block
     return block;
 }
 
@@ -3908,8 +3921,7 @@ void colo_release_ram_cache(void)
 }
 
 /**
- * ram_load_setup: Setup RAM for migration incoming side
- *
+ * ram_load_setup: 设置RAM以准备接收迁移数
  * Returns zero to indicate success and negative for error
  *
  * @f: QEMUFile where to receive the data
@@ -3917,6 +3929,7 @@ void colo_release_ram_cache(void)
  */
 static int ram_load_setup(QEMUFile *f, void *opaque)
 {
+    //加载压缩线程
     if (compress_threads_load_setup(f)) {
         return -1;
     }
@@ -4616,9 +4629,9 @@ static SaveVMHandlers savevm_ram_handlers = {
     .save_live_complete_precopy = ram_save_complete,
     .has_postcopy = ram_has_postcopy,
     .save_live_pending = ram_save_pending,
-    .load_state = ram_load,
+    .load_state = ram_load, //接受加载虚拟机内存，设备状态等
     .save_cleanup = ram_save_cleanup,
-    .load_setup = ram_load_setup,
+    .load_setup = ram_load_setup,//设置RAM以准备接收迁移数据
     .load_cleanup = ram_load_cleanup,
     .resume_prepare = ram_resume_prepare,
 };

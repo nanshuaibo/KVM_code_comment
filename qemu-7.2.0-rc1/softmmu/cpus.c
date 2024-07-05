@@ -696,7 +696,7 @@ int vm_prepare_start(bool step_pending)
      */
     if (runstate_is_running()) {
         qapi_event_send_stop();
-        qapi_event_send_resume();
+        qapi_event_send_resume(); //通知libvirt启动虚拟机
         return -1;
     }
 
@@ -717,6 +717,7 @@ int vm_prepare_start(bool step_pending)
     return 0;
 }
 
+//启动虚拟机
 void vm_start(void)
 {
     if (!vm_prepare_start(false)) {

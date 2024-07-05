@@ -490,22 +490,31 @@ static void qemu_start_incoming_migration(const char *uri, Error **errp)
 {
     const char *p = NULL;
 
-    migrate_protocol_allow_multi_channels(false); /* reset it anyway */
+    // 重置迁移协议，允许多通道
+    migrate_protocol_allow_multi_channels(false);
+    // 发送迁移状态事件
     qapi_event_send_migration(MIGRATION_STATUS_SETUP);
+    // 根据URI协议类型，启动相应的迁移方式
     if (strstart(uri, "tcp:", &p) ||
         strstart(uri, "unix:", NULL) ||
         strstart(uri, "vsock:", NULL)) {
+        // 允许多通道
         migrate_protocol_allow_multi_channels(true);
+        // 启动TCP/Unix/VSOCK迁移方式
         socket_start_incoming_migration(p ? p : uri, errp);
 #ifdef CONFIG_RDMA
     } else if (strstart(uri, "rdma:", &p)) {
+        // 启动RDMA迁移方式
         rdma_start_incoming_migration(p, errp);
 #endif
     } else if (strstart(uri, "exec:", &p)) {
+        // 启动EXEC迁移方式
         exec_start_incoming_migration(p, errp);
     } else if (strstart(uri, "fd:", &p)) {
+        // 启动FD迁移方式
         fd_start_incoming_migration(p, errp);
     } else {
+        // 如果URI协议类型未知，设置错误信息
         error_setg(errp, "unknown migration protocol: %s", uri);
     }
 }
@@ -585,9 +594,9 @@ process_incoming_migration_co(void *opaque)
     assert(mis->from_src_file);
     mis->migration_incoming_co = qemu_coroutine_self();
     mis->largest_page_size = qemu_ram_pagesize_largest();
-    postcopy_state_set(POSTCOPY_INCOMING_NONE);
+    postcopy_state_set(POSTCOPY_INCOMING_NONE); //目的端postcopy状态
     migrate_set_state(&mis->state, MIGRATION_STATUS_NONE,
-                      MIGRATION_STATUS_ACTIVE);
+                      MIGRATION_STATUS_ACTIVE); //process_incoming_migration_co
     ret = qemu_loadvm_state(mis->from_src_file);
 
     ps = postcopy_state_get();
@@ -643,7 +652,7 @@ process_incoming_migration_co(void *opaque)
     return;
 fail:
     local_err = NULL;
-    migrate_set_state(&mis->state, MIGRATION_STATUS_ACTIVE,
+    migrate_set_state(&mis->state, MIGRATION_STATUS_ACTIVE, //迁移失败
                       MIGRATION_STATUS_FAILED);
     qemu_fclose(mis->from_src_file);
     if (multifd_load_cleanup(&local_err) != 0) {
@@ -676,7 +685,9 @@ static bool migration_incoming_setup(QEMUFile *f, Error **errp)
 
 void migration_incoming_process(void)
 {
+    //创建一个新的协程，用于处理传入的迁移请求
     Coroutine *co = qemu_coroutine_create(process_incoming_migration_co, NULL);
+    //进入协程，开始处理传入的迁移请求
     qemu_coroutine_enter(co);
 }
 
@@ -744,10 +755,8 @@ void migration_ioc_process_incoming(QIOChannel *ioc, Error **errp)
             return;
         }
 
-        /*
-         * Common migration only needs one channel, so we can start
-         * right now.  Some features need more than one channel, we wait.
-         */
+        // 如果只需要一个通道就可以完成通用迁移，那么现在就可以开始
+        // 一些特性需要多个通道，需要等待
         start_migration = !migration_needs_multiple_sockets();
     } else {
         /* Multiple connections */
@@ -2195,30 +2204,38 @@ void migrate_del_blocker(Error *reason)
 
 void qmp_migrate_incoming(const char *uri, Error **errp)
 {
+    // 创建一个局部错误变量，用于存储在执行过程中产生的错误
     Error *local_err = NULL;
+    // 定义一个静态布尔变量，用于确保迁移过程只启动一次
     static bool once = true;
 
+    // 如果迁移过程已经启动过，返回错误信息
     if (!once) {
         error_setg(errp, "The incoming migration has already been started");
         return;
     }
+    // 检查当前运行状态是否为迁移中，如果不是，返回错误信息
     if (!runstate_check(RUN_STATE_INMIGRATE)) {
         error_setg(errp, "'-incoming' was not specified on the command line");
         return;
     }
 
+    // 注册当前实例以便在迁移过程中进行资源回收
     if (!yank_register_instance(MIGRATION_YANK_INSTANCE, errp)) {
         return;
     }
 
+    // 启动迁移过程，传入URI和局部错误变量
     qemu_start_incoming_migration(uri, &local_err);
 
+    // 如果迁移过程中出现错误，注销实例并传播错误信息
     if (local_err) {
         yank_unregister_instance(MIGRATION_YANK_INSTANCE);
         error_propagate(errp, local_err);
         return;
     }
 
+    // 设置once为false，表示迁移过程已经启动过
     once = false;
 }
 

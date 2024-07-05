@@ -872,7 +872,7 @@ static int vmstate_load(QEMUFile *f, SaveStateEntry *se)
 {
     trace_vmstate_load(se->idstr, se->vmsd ? se->vmsd->name : "(old)");
     if (!se->vmsd) {         /* Old style */
-        return se->ops->load_state(f, se->opaque, se->load_version_id);
+        return se->ops->load_state(f, se->opaque, se->load_version_id); //调用ram_load
     }
     return vmstate_load_state(f, se->vmsd, se->opaque, se->load_version_id);
 }
@@ -2524,7 +2524,7 @@ static int qemu_loadvm_state_setup(QEMUFile *f)
             }
         }
 
-        ret = se->ops->load_setup(f, se->opaque);
+        ret = se->ops->load_setup(f, se->opaque);//设置RAM以准备接收迁移数据
         if (ret < 0) {
             qemu_file_set_error(f, ret);
             error_report("Load state of device %s failed", se->idstr);
@@ -2631,16 +2631,16 @@ retry:
         }
 
         trace_qemu_loadvm_state_section(section_type);
-        switch (section_type) {
-        case QEMU_VM_SECTION_START:
-        case QEMU_VM_SECTION_FULL:
+        switch (section_type) { //根据不同阶段插入的不同section来处理
+        case QEMU_VM_SECTION_START: //源端开始迁移
+        case QEMU_VM_SECTION_FULL: //设备同步阶段
             ret = qemu_loadvm_section_start_full(f, mis);
             if (ret < 0) {
                 goto out;
             }
             break;
-        case QEMU_VM_SECTION_PART:
-        case QEMU_VM_SECTION_END:
+        case QEMU_VM_SECTION_PART://迭代阶段
+        case QEMU_VM_SECTION_END: //迁移完成阶段
             ret = qemu_loadvm_section_part_end(f, mis);
             if (ret < 0) {
                 goto out;
@@ -2697,12 +2697,12 @@ int qemu_loadvm_state(QEMUFile *f)
     Error *local_err = NULL;
     int ret;
 
-    if (qemu_savevm_state_blocked(&local_err)) {
+    if (qemu_savevm_state_blocked(&local_err)) { //是否有不可迁移的设备
         error_report_err(local_err);
         return -EINVAL;
     }
 
-    ret = qemu_loadvm_state_header(f);
+    ret = qemu_loadvm_state_header(f); //加载虚拟机状态头部信息
     if (ret) {
         return ret;
     }
@@ -2713,7 +2713,7 @@ int qemu_loadvm_state(QEMUFile *f)
 
     cpu_synchronize_all_pre_loadvm();
 
-    ret = qemu_loadvm_state_main(f, mis);
+    ret = qemu_loadvm_state_main(f, mis); //加载虚拟机
     qemu_event_set(&mis->main_thread_load_event);
 
     trace_qemu_loadvm_state_post_main(ret);

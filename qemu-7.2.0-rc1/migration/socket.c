@@ -141,9 +141,9 @@ void socket_start_outgoing_migration(MigrationState *s,
                                      Error **errp)
 {
     Error *err = NULL;
-    SocketAddress *saddr = socket_parse(str, &err); //解析uri类型
+    SocketAddress *saddr = socket_parse(str, &err); //解析传入的uri，建立连接，获取SocketAddress对象
     if (!err) {
-        socket_start_outgoing_migration_internal(s, saddr, &err);
+        socket_start_outgoing_migration_internal(s, saddr, &err);//开始传输迁移数据
     }
     error_propagate(errp, err);
 }
@@ -160,7 +160,9 @@ static void socket_accept_incoming_migration(QIONetListener *listener,
         return;
     }
 
+    // 设置通道的名称
     qio_channel_set_name(QIO_CHANNEL(cioc), "migration-socket-incoming");
+    // 处理传入的迁移通道
     migration_channel_process_incoming(QIO_CHANNEL(cioc));
 }
 
@@ -184,25 +186,27 @@ socket_start_incoming_migration_internal(SocketAddress *saddr,
 
     qio_net_listener_set_name(listener, "migration-socket-listener");
 
+    //根据迁移策略设置监听器额通道数
     if (migrate_use_multifd()) {
         num = migrate_multifd_channels();
     } else if (migrate_postcopy_preempt()) {
         num = RAM_CHANNEL_MAX;
     }
 
-    if (qio_net_listener_open_sync(listener, saddr, num, errp) < 0) {
+    if (qio_net_listener_open_sync(listener, saddr, num,  errp) < 0) {
         object_unref(OBJECT(listener));
         return;
     }
 
     mis->transport_data = listener;
+    //设置迁移状态的传输清理函数
     mis->transport_cleanup = socket_incoming_migration_end;
 
     qio_net_listener_set_client_func_full(listener,
-                                          socket_accept_incoming_migration,
+                                          socket_accept_incoming_migration, //处理函数
                                           NULL, NULL,
                                           g_main_context_get_thread_default());
-
+    // 遍历监听器的所有连接
     for (i = 0; i < listener->nsioc; i++)  {
         SocketAddress *address =
             qio_channel_socket_get_local_address(listener->sioc[i], errp);
