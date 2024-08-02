@@ -28,11 +28,11 @@
  */
 struct virtqueue {
 	struct list_head list;
-	void (*callback)(struct virtqueue *vq);
+	void (*callback)(struct virtqueue *vq); //网络收报和发包各有队列
 	const char *name;
 	struct virtio_device *vdev;
 	unsigned int index;
-	unsigned int num_free;
+	unsigned int num_free;  //vring大小，blk是128，后端设定的
 	unsigned int num_max;
 	void *priv;
 	bool reset;

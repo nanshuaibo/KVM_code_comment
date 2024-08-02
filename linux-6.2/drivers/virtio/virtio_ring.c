@@ -152,7 +152,7 @@ struct vring_virtqueue_packed {
 };
 
 struct vring_virtqueue {
-	struct virtqueue vq;
+	struct virtqueue vq; //virtqueue 的数目根据设备的不同而不同
 
 	/* Is this a packed ring? */
 	bool packed_ring;
@@ -173,9 +173,9 @@ struct vring_virtqueue {
 	bool event;
 
 	/* Head of free buffer list. */
-	unsigned int free_head;
+	unsigned int free_head;  //desc的第一个空闲位置
 	/* Number we've added since last sync. */
-	unsigned int num_added;
+	unsigned int num_added;//kick后端后，又新加的avail个数
 
 	/* Last used index  we've seen.
 	 * for split ring, it just contains last used index
@@ -183,11 +183,12 @@ struct vring_virtqueue {
 	 * bits up to VRING_PACKED_EVENT_F_WRAP_CTR include the last used index.
 	 * bits from VRING_PACKED_EVENT_F_WRAP_CTR include the used wrap counter.
 	 */
-	u16 last_used_idx;
+	u16 last_used_idx; //前端处理的used ring位置
 
 	/* Hint for event idx: already triggered no need to disable. */
 	bool event_triggered;
 
+	//选择使用分离环模式或打包环模式来实现虚拟队列,实现用来存储数据(avail, used ring 是分离)
 	union {
 		/* Available for split ring */
 		struct vring_virtqueue_split split;
@@ -197,7 +198,7 @@ struct vring_virtqueue {
 	};
 
 	/* How to notify other side. FIXME: commonalize hcalls! */
-	bool (*notify)(struct virtqueue *vq);
+	bool (*notify)(struct virtqueue *vq); //通知后端，vp_notify
 
 	/* DMA, allocation, and size information */
 	bool we_own_ring;
@@ -546,7 +547,7 @@ static inline int virtqueue_add_split(struct virtqueue *_vq,
 
 	head = vq->free_head;
 
-	if (virtqueue_use_indirect(vq, total_sg))
+	if (virtqueue_use_indirect(vq, total_sg)) //如果支持indirect，且添加数据大余1，且还有空闲desc
 		desc = alloc_indirect_split(_vq, total_sg, gfp);
 	else {
 		desc = NULL;
@@ -557,16 +558,16 @@ static inline int virtqueue_add_split(struct virtqueue *_vq,
 		/* Use a single buffer which doesn't continue */
 		indirect = true;
 		/* Set up rest to use this indirect table. */
-		i = 0;
+		i = 0; //新开indirect desc，都从0用indirect desc，head不动，用i标识desc，之后用head的next更新free_head
 		descs_used = 1;
 	} else {
 		indirect = false;
 		desc = vq->split.vring.desc;
-		i = head;
-		descs_used = total_sg;
+		i = head; //i标识desc，之后更新free_head
+		descs_used = total_sg; //本次sg entry总数
 	}
 
-	if (unlikely(vq->vq.num_free < descs_used)) {
+	if (unlikely(vq->vq.num_free < descs_used)) { //若空闲desc不足，需要notify后端处理
 		pr_debug("Can't add buf len %i - avail = %i\n",
 			 descs_used, vq->vq.num_free);
 		/* FIXME: for historical reasons, we force a notify here if
@@ -580,7 +581,7 @@ static inline int virtqueue_add_split(struct virtqueue *_vq,
 		return -ENOSPC;
 	}
 
-	for (n = 0; n < out_sgs; n++) {
+	for (n = 0; n < out_sgs; n++) { //out
 		for (sg = sgs[n]; sg; sg = sg_next(sg)) {
 			dma_addr_t addr = vring_map_one_sg(vq, sg, DMA_TO_DEVICE);
 			if (vring_mapping_error(vq, addr))
@@ -595,9 +596,9 @@ static inline int virtqueue_add_split(struct virtqueue *_vq,
 						     indirect);
 		}
 	}
-	for (; n < (out_sgs + in_sgs); n++) {
+	for (; n < (out_sgs + in_sgs); n++) { //in
 		for (sg = sgs[n]; sg; sg = sg_next(sg)) {
-			dma_addr_t addr = vring_map_one_sg(vq, sg, DMA_FROM_DEVICE);
+			dma_addr_t addr = vring_map_one_sg(vq, sg, DMA_FROM_DEVICE); //得到scatterlist中数据的gpa
 			if (vring_mapping_error(vq, addr))
 				goto unmap_release;
 
@@ -608,19 +609,20 @@ static inline int virtqueue_add_split(struct virtqueue *_vq,
 			i = virtqueue_add_desc_split(_vq, desc, i, addr,
 						     sg->length,
 						     VRING_DESC_F_NEXT |
-						     VRING_DESC_F_WRITE,
+						     VRING_DESC_F_WRITE, //后端设备可写
 						     indirect);
 		}
 	}
 	/* Last one doesn't continue. */
-	desc[prev].flags &= cpu_to_virtio16(_vq->vdev, ~VRING_DESC_F_NEXT);
+	//清掉next来表示结束，对应avail里没有len，是靠desc是否有next来确定此处是否处理完
+	desc[prev].flags &= cpu_to_virtio16(_vq->vdev, ~VRING_DESC_F_NEXT); 
 	if (!indirect && vq->use_dma_api)
 		vq->split.desc_extra[prev & (vq->split.vring.num - 1)].flags &=
 			~VRING_DESC_F_NEXT;
 
-	if (indirect) {
+	if (indirect) {//indirect表，用desc表的一项来指向
 		/* Now that the indirect table is filled in, map it. */
-		dma_addr_t addr = vring_map_single(
+		dma_addr_t addr = vring_map_single( //映射处理器的虚拟地址，这样可以让外设访问。该函数返回内存的物理地址
 			vq, desc, total_sg * sizeof(struct vring_desc),
 			DMA_TO_DEVICE);
 		if (vring_mapping_error(vq, addr))
@@ -634,10 +636,10 @@ static inline int virtqueue_add_split(struct virtqueue *_vq,
 	}
 
 	/* We're using some buffers from the free list. */
-	vq->vq.num_free -= descs_used;
+	vq->vq.num_free -= descs_used; //更新剩余desc数量
 
 	/* Update free pointer */
-	if (indirect)
+	if (indirect) //更新free_head
 		vq->free_head = vq->split.desc_extra[head].next;
 	else
 		vq->free_head = i;
@@ -651,8 +653,8 @@ static inline int virtqueue_add_split(struct virtqueue *_vq,
 
 	/* Put entry in available array (but don't update avail->idx until they
 	 * do sync). */
-	avail = vq->split.avail_idx_shadow & (vq->split.vring.num - 1);
-	vq->split.vring.avail->ring[avail] = cpu_to_virtio16(_vq->vdev, head);
+	avail = vq->split.avail_idx_shadow & (vq->split.vring.num - 1); 
+	vq->split.vring.avail->ring[avail] = cpu_to_virtio16(_vq->vdev, head); //把desc的head放到avail的avail->idx
 
 	/* Descriptors and available array need to be set before we expose the
 	 * new available array entries. */
@@ -660,7 +662,7 @@ static inline int virtqueue_add_split(struct virtqueue *_vq,
 	vq->split.avail_idx_shadow++;
 	vq->split.vring.avail->idx = cpu_to_virtio16(_vq->vdev,
 						vq->split.avail_idx_shadow);
-	vq->num_added++;
+	vq->num_added++; // 次新增avail个数，在virtqueue_kick_prepare在kick前会清0
 
 	pr_debug("Added buffer head %i to %p\n", head, vq);
 	END_USE(vq);
@@ -708,9 +710,9 @@ static bool virtqueue_kick_prepare_split(struct virtqueue *_vq)
 	 * event. */
 	virtio_mb(vq->weak_barriers);
 
-	old = vq->split.avail_idx_shadow - vq->num_added;
-	new = vq->split.avail_idx_shadow;
-	vq->num_added = 0;
+	old = vq->split.avail_idx_shadow - vq->num_added; //此次没添加时的avail位置
+	new = vq->split.avail_idx_shadow; //此次添加请求后的avail位置
+	vq->num_added = 0;//清空添加的请求数量
 
 	LAST_ADD_TIME_CHECK(vq);
 	LAST_ADD_TIME_INVALID(vq);
@@ -718,7 +720,7 @@ static bool virtqueue_kick_prepare_split(struct virtqueue *_vq)
 	if (vq->event) {
 		needs_kick = vring_need_event(virtio16_to_cpu(_vq->vdev,
 					vring_avail_event(&vq->split.vring)),
-					      new, old);
+					      new, old); //vring_need_event判断后端处理的位置event_idx超过了old，表示后端qemu处理的速度够快，已经处理完上一次kick提交的request，kick后端
 	} else {
 		needs_kick = !(vq->split.vring.used->flags &
 					cpu_to_virtio16(_vq->vdev,

@@ -1776,49 +1776,69 @@ static int virtnet_poll_tx(struct napi_struct *napi, int budget)
 
 static int xmit_skb(struct send_queue *sq, struct sk_buff *skb)
 {
-	struct virtio_net_hdr_mrg_rxbuf *hdr;
-	const unsigned char *dest = ((struct ethhdr *)skb->data)->h_dest;
-	struct virtnet_info *vi = sq->vq->vdev->priv;
-	int num_sg;
-	unsigned hdr_len = vi->hdr_len;
-	bool can_push;
+    // 定义数据包头部结构体指针
+    struct virtio_net_hdr_mrg_rxbuf *hdr;
+    // 获取数据包目的MAC地址
+    const unsigned char *dest = ((struct ethhdr *)skb->data)->h_dest;
+    // 获取虚拟网络设备信息
+    struct virtnet_info *vi = sq->vq->vdev->priv;
+    // 初始化scatterlist数量
+    int num_sg;
+    // 获取virtio头部长度
+    unsigned hdr_len = vi->hdr_len;
+    // 判断是否可以将virtio头部推入数据包头部
+    bool can_push;
 
-	pr_debug("%s: xmit %p %pM\n", vi->dev->name, skb, dest);
+    // 打印调试信息
+    pr_debug("%s: xmit %p %pM
+", vi->dev->name, skb, dest);
 
-	can_push = vi->any_header_sg &&
-		!((unsigned long)skb->data & (__alignof__(*hdr) - 1)) &&
-		!skb_header_cloned(skb) && skb_headroom(skb) >= hdr_len;
-	/* Even if we can, don't push here yet as this would skew
-	 * csum_start offset below. */
-	if (can_push)
-		hdr = (struct virtio_net_hdr_mrg_rxbuf *)(skb->data - hdr_len);
-	else
-		hdr = skb_vnet_hdr(skb);
+    // 判断是否可以推入virtio头部
+    can_push = vi->any_header_sg &&
+        !((unsigned long)skb->data & (__alignof__(*hdr) - 1)) &&
+        !skb_header_cloned(skb) && skb_headroom(skb) >= hdr_len;
+    // 如果可以推入，将hdr指向数据包头部前的位置；否则，指向skb的virtio头部
+    if (can_push)
+        hdr = (struct virtio_net_hdr_mrg_rxbuf *)(skb->data - hdr_len);
+    else
+        hdr = skb_vnet_hdr(skb);
 
-	if (virtio_net_hdr_from_skb(skb, &hdr->hdr,
-				    virtio_is_little_endian(vi->vdev), false,
-				    0))
-		return -EPROTO;
+    // 从skb中提取virtio头部信息到hdr结构体中
+    if (virtio_net_hdr_from_skb(skb, &hdr->hdr,
+            virtio_is_little_endian(vi->vdev), false,
+            0))
+        return -EPROTO;
 
-	if (vi->mergeable_rx_bufs)
-		hdr->num_buffers = 0;
+    // 如果设备支持合并接收缓冲区，将hdr中的num_buffers设置为0
+    if (vi->mergeable_rx_bufs)
+        hdr->num_buffers = 0;
 
-	sg_init_table(sq->sg, skb_shinfo(skb)->nr_frags + (can_push ? 1 : 2));
-	if (can_push) {
-		__skb_push(skb, hdr_len);
-		num_sg = skb_to_sgvec(skb, sq->sg, 0, skb->len);
-		if (unlikely(num_sg < 0))
-			return num_sg;
-		/* Pull header back to avoid skew in tx bytes calculations. */
-		__skb_pull(skb, hdr_len);
-	} else {
-		sg_set_buf(sq->sg, hdr, hdr_len);
-		num_sg = skb_to_sgvec(skb, sq->sg + 1, 0, skb->len);
-		if (unlikely(num_sg < 0))
-			return num_sg;
-		num_sg++;
-	}
-	return virtqueue_add_outbuf(sq->vq, sq->sg, num_sg, skb, GFP_ATOMIC);
+    // 初始化scatterlist表
+    sg_init_table(sq->sg, skb_shinfo(skb)->nr_frags + (can_push ? 1 : 2));
+    // 如果可以推入virtio头部
+    if (can_push) {
+        // 将virtio头部推入数据包头部
+        __skb_push(skb, hdr_len);
+        // 将数据包转换为scatterlist
+        num_sg = skb_to_sgvec(skb, sq->sg, 0, skb->len);
+        // 如果转换失败，返回错误码
+        if (unlikely(num_sg < 0))
+            return num_sg;
+        // 将virtio头部拉回，以避免在发送字节计算中产生偏差
+        __skb_pull(skb, hdr_len);
+    } else {
+        // 设置scatterlist的第一个元素为virtio头部
+        sg_set_buf(sq->sg, hdr, hdr_len);
+        // 将数据包转换为scatterlist（跳过virtio头部）
+        num_sg = skb_to_sgvec(skb, sq->sg + 1, 0, skb->len);
+        // 如果转换失败，返回错误码
+        if (unlikely(num_sg < 0))
+            return num_sg;
+        // scatterlist数量加1（包括virtio头部）
+        num_sg++;
+    }
+    // 将数据包添加到虚拟队列的输出缓冲区中
+    return virtqueue_add_outbuf(sq->vq, sq->sg, num_sg, skb, GFP_ATOMIC);
 }
 
 static netdev_tx_t start_xmit(struct sk_buff *skb, struct net_device *dev)
@@ -1875,22 +1895,22 @@ static netdev_tx_t start_xmit(struct sk_buff *skb, struct net_device *dev)
 	 * Since most packets only take 1 or 2 ring slots, stopping the queue
 	 * early means 16 slots are typically wasted.
 	 */
-	if (sq->vq->num_free < 2+MAX_SKB_FRAGS) {
-		netif_stop_subqueue(dev, qnum);
+	if (sq->vq->num_free < 2+MAX_SKB_FRAGS) { //发送队列中空间不足
+		netif_stop_subqueue(dev, qnum); //关闭发送队列
 		if (use_napi) {
 			if (unlikely(!virtqueue_enable_cb_delayed(sq->vq)))
 				virtqueue_napi_schedule(&sq->napi, sq->vq);
-		} else if (unlikely(!virtqueue_enable_cb_delayed(sq->vq))) {
+		} else if (unlikely(!virtqueue_enable_cb_delayed(sq->vq))) { //让后端中断通知前端，要发送时候此函数开始会free_old_xmit_skbs清理发送队列，以便空出位置再添加请求
 			/* More just got used, free them then recheck. */
-			free_old_xmit_skbs(sq, false);
-			if (sq->vq->num_free >= 2+MAX_SKB_FRAGS) {
-				netif_start_subqueue(dev, qnum);
-				virtqueue_disable_cb(sq->vq);
+			free_old_xmit_skbs(sq, false); 
+			if (sq->vq->num_free >= 2+MAX_SKB_FRAGS) { //再次检查发送队列空间
+				netif_start_subqueue(dev, qnum); //开启数据传输
+				virtqueue_disable_cb(sq->vq); //关闭后端的中断通知前端
 			}
 		}
 	}
 
-	if (kick || netif_xmit_stopped(txq)) {
+	if (kick || netif_xmit_stopped(txq)) { //kick后端进行处理
 		if (virtqueue_kick_prepare(sq->vq) && virtqueue_notify(sq->vq)) {
 			u64_stats_update_begin(&sq->stats.syncp);
 			sq->stats.kicks++;
