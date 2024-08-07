@@ -662,7 +662,7 @@ static inline int virtqueue_add_split(struct virtqueue *_vq,
 	vq->split.avail_idx_shadow++;
 	vq->split.vring.avail->idx = cpu_to_virtio16(_vq->vdev,
 						vq->split.avail_idx_shadow);
-	vq->num_added++; // 次新增avail个数，在virtqueue_kick_prepare在kick前会清0
+	vq->num_added++; // 新增avail个数，在virtqueue_kick_prepare在kick前会清0
 
 	pr_debug("Added buffer head %i to %p\n", head, vq);
 	END_USE(vq);

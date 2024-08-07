@@ -163,7 +163,7 @@ typedef struct vring_used __attribute__((aligned(VRING_USED_ALIGN_SIZE)))
 	vring_used_t;
 
 struct vring {
-	unsigned int num; //virtqueue->num_free最大值，即vring大小，三个表能存的个数，128
+	unsigned int num; //也是virtqueue->num_free的最大值，即vring大小，三个表能存的个数，128
 
 	vring_desc_t *desc; //描述符表，里面存放着前端驱动发送给后端设备的数据描述
 
