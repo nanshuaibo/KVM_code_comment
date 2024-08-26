@@ -386,10 +386,12 @@ static blk_status_t virtio_queue_rq(struct blk_mq_hw_ctx *hctx,
 		return virtblk_fail_to_queue(req, err);
 	}
 
+	//准备kick后端
 	if (bd->last && virtqueue_kick_prepare(vblk->vqs[qid].vq))
 		notify = true;
 	spin_unlock_irqrestore(&vblk->vqs[qid].lock, flags);
 
+	//通知后端
 	if (notify)
 		virtqueue_notify(vblk->vqs[qid].vq);
 	return BLK_STS_OK;
@@ -682,6 +684,7 @@ static int init_vq(struct virtio_blk *vblk)
 	}
 
 	/* Discover virtqueues and write information to configuration.  */
+	// 创建虚拟队列
 	err = virtio_find_vqs(vdev, num_vqs, vqs, callbacks, names, &desc);
 	if (err)
 		goto out;
