@@ -544,9 +544,9 @@ struct lruvec {
 typedef unsigned __bitwise isolate_mode_t;
 
 enum zone_watermarks {
-	WMARK_MIN,
-	WMARK_LOW,
-	WMARK_HIGH,
+	WMARK_MIN, //最小水位线
+	WMARK_LOW, //低水位线
+	WMARK_HIGH, // 高水位线
 	WMARK_PROMO,
 	NR_WMARK
 };
@@ -565,9 +565,9 @@ enum zone_watermarks {
 #define NR_LOWORDER_PCP_LISTS (MIGRATE_PCPTYPES * (PAGE_ALLOC_COSTLY_ORDER + 1))
 #define NR_PCP_LISTS (NR_LOWORDER_PCP_LISTS + NR_PCP_THP)
 
-#define min_wmark_pages(z) (z->_watermark[WMARK_MIN] + z->watermark_boost)
-#define low_wmark_pages(z) (z->_watermark[WMARK_LOW] + z->watermark_boost)
-#define high_wmark_pages(z) (z->_watermark[WMARK_HIGH] + z->watermark_boost)
+#define min_wmark_pages(z) (z->_watermark[WMARK_MIN] + z->watermark_boost) //获取给定内存区域最小水位线
+#define low_wmark_pages(z) (z->_watermark[WMARK_LOW] + z->watermark_boost) //获取给定内存区域低水位线
+#define high_wmark_pages(z) (z->_watermark[WMARK_HIGH] + z->watermark_boost) //获取内存区域的高水位线
 #define wmark_pages(z, i) (z->_watermark[i] + z->watermark_boost)
 
 /* Fields and list protected by pagesets local_lock in page_alloc.c */
@@ -788,9 +788,9 @@ struct zone {
 	 * mem_hotplug_begin/done(). Any reader who can't tolerant drift of
 	 * present_pages should use get_online_mems() to get a stable value.
 	 */
-	atomic_long_t		managed_pages;
-	unsigned long		spanned_pages;
-	unsigned long		present_pages;
+	atomic_long_t		managed_pages; //伙伴系统管理的物理页的数量
+	unsigned long		spanned_pages; //当前区域跨越的总页数，包括空洞
+	unsigned long		present_pages; //当前区域存在的物理页数量，不包括空洞
 #if defined(CONFIG_MEMORY_HOTPLUG)
 	unsigned long		present_early_pages;
 #endif
@@ -1091,6 +1091,8 @@ struct zoneref {
  * zonelist_zone_idx()	- Return the index of the zone for an entry
  * zonelist_node_idx()	- Return the index of the node for an entry
  */
+
+ //表示备用区列表
 struct zonelist {
 	struct zoneref _zonerefs[MAX_ZONES_PER_ZONELIST + 1];
 };
@@ -1118,22 +1120,22 @@ struct deferred_split {
  * Memory statistics and page replacement data structures are maintained on a
  * per-zone basis.
  */
-typedef struct pglist_data {
+typedef struct pglist_data { 
 	/*
 	 * node_zones contains just the zones for THIS node. Not all of the
 	 * zones may be populated, but it is the full list. It is referenced by
 	 * this node's node_zonelists as well as other node's node_zonelists.
 	 */
-	struct zone node_zones[MAX_NR_ZONES];
+	struct zone node_zones[MAX_NR_ZONES]; //内存区域数组，存储每个节点包含的不同类型的内存区域信息
 
 	/*
 	 * node_zonelists contains references to all zones in all nodes.
 	 * Generally the first zones will be references to this node's
 	 * node_zones.
 	 */
-	struct zonelist node_zonelists[MAX_ZONELISTS];
+	struct zonelist node_zonelists[MAX_ZONELISTS]; //备用区域数组
 
-	int nr_zones; /* number of populated zones in this node */
+	int nr_zones; /* number of populated zones in this node *///该节点包含的内存区域数量
 #ifdef CONFIG_FLATMEM	/* means !SPARSEMEM */
 	struct page *node_mem_map;
 #ifdef CONFIG_PAGE_EXTENSION
