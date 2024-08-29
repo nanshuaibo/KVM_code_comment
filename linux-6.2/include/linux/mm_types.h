@@ -287,44 +287,35 @@ static inline struct page *encoded_page_ptr(struct encoded_page *page)
 }
 
 /**
- * struct folio - Represents a contiguous set of bytes.
- * @flags: Identical to the page flags.
- * @lru: Least Recently Used list; tracks how recently this folio was used.
- * @mlock_count: Number of times this folio has been pinned by mlock().
- * @mapping: The file this page belongs to, or refers to the anon_vma for
- *    anonymous memory.
- * @index: Offset within the file, in units of pages.  For anonymous memory,
- *    this is the index from the beginning of the mmap.
- * @private: Filesystem per-folio data (see folio_attach_private()).
- *    Used for swp_entry_t if folio_test_swapcache().
- * @_mapcount: Do not access this member directly.  Use folio_mapcount() to
- *    find out how many times this folio is mapped by userspace.
- * @_refcount: Do not access this member directly.  Use folio_ref_count()
- *    to find how many references there are to this folio.
- * @memcg_data: Memory Control Group data.
- * @_flags_1: For large folios, additional page flags.
- * @_head_1: Points to the folio.  Do not use.
- * @_folio_dtor: Which destructor to use for this folio.
- * @_folio_order: Do not use directly, call folio_order().
- * @_compound_mapcount: Do not use directly, call folio_entire_mapcount().
- * @_subpages_mapcount: Do not use directly, call folio_mapcount().
- * @_pincount: Do not use directly, call folio_maybe_dma_pinned().
- * @_folio_nr_pages: Do not use directly, call folio_nr_pages().
- * @_flags_2: For alignment.  Do not use.
- * @_head_2: Points to the folio.  Do not use.
- * @_hugetlb_subpool: Do not use directly, use accessor in hugetlb.h.
- * @_hugetlb_cgroup: Do not use directly, use accessor in hugetlb_cgroup.h.
- * @_hugetlb_cgroup_rsvd: Do not use directly, use accessor in hugetlb_cgroup.h.
- * @_hugetlb_hwpoison: Do not use directly, call raw_hwp_list_head().
- *
- * A folio is a physically, virtually and logically contiguous set
- * of bytes.  It is a power-of-two in size, and it is aligned to that
- * same power-of-two.  It is at least as large as %PAGE_SIZE.  If it is
- * in the page cache, it is at a file offset which is a multiple of that
- * power-of-two.  It may be mapped into userspace at an address which is
- * at an arbitrary page offset, but its kernel virtual address is aligned
- * to its size.
+ * struct folio - 表示一个连续的字节集合。
+ * @flags: 与页标志相同。
+ * @lru: 最近最少使用列表；跟踪该页面最近被使用的时间。
+ * @mlock_count: mlock() 函数锁定该页面的次数。
+ * @mapping: 该页所属的文件，或者，如果是匿名内存，则为 anon_vma 的指针。
+ * @index: 在文件内的偏移量，单位为页。对于匿名内存，这是从 mmap 开始的索引。
+ * @private: 文件系统每页面数据（见 folio_attach_private()）。如果 folio_test_swapcache() 使用，则用于 swp_entry_t。
+ * @_mapcount: 请勿直接访问此成员。使用 folio_mapcount() 来查看该页面被用户空间映射的次数。
+ * @_refcount: 请勿直接访问此成员。使用 folio_ref_count() 来查看对该页面的引用次数。
+ * @memcg_data: 内存控制组数据。
+ * @_flags_1: 对于大页面，还有额外的页面标志。
+ * @_head_1: 指向页面。不要使用。
+ * @_folio_dtor: 该页面使用的析构函数。
+ * @_folio_order: 请勿直接使用，调用 folio_order()。
+ * @_compound_mapcount: 请勿直接使用，调用 folio_entire_mapcount()。
+ * @_subpages_mapcount: 请勿直接使用，调用 folio_mapcount()。
+ * @_pincount: 请勿直接使用，调用 folio_maybe_dma_pinned()。
+ * @_folio_nr_pages: 请勿直接使用，调用 folio_nr_pages()。
+ * @_flags_2: 用于对齐目的。不要使用。
+ * @_head_2: 指向页面。不要使用。
+ * @_hugetlb_subpool: 请勿直接使用，使用 hugetlb.h 中的访问器。
+ * @_hugetlb_cgroup: 请勿直接使用，使用 hugetlb_cgroup.h 中的访问器。
+ * @_hugetlb_cgroup_rsvd: 请勿直接使用，使用 hugetlb_cgroup.h 中的访问器。
+ * @_hugetlb_hwpoison: 请勿直接使用，调用 raw_hwp_list_head()。
+ * folio 是一个物理上、虚拟上和逻辑上连续的字节集合。它的大小是2的幂，并且按照这个幂对齐。
+ * 它至少和 %PAGE_SIZE 一样大。如果它在页面缓存中，它位于文件的偏移量，该偏移量是这个幂的倍数。
+ * 它可以被映射到用户空间的任意页面偏移量的地址，但是它的内核虚拟地址是按照它的大小对齐的。
  */
+
 struct folio {
 	/* private: don't document the anon union */
 	union {

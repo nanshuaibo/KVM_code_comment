@@ -6,68 +6,100 @@
  */
 
 /* Reuses the bits in struct page */
+// 结构体 slub，用于内核中的内存管理
 struct slab {
+	// 一个无符号长整数，用于保存页面标志
 	unsigned long __page_flags;
 
-#if defined(CONFIG_SLAB)
+	// 条件编译，根据不同的配置，结构体内容会有所不同
 
+#if defined(CONFIG_SLAB)
+	// 指向 kmem_cache 结构体的指针，用于管理缓存
 	struct kmem_cache *slab_cache;
+	// 联合，用于在不同的结构体定义之间进行选择
 	union {
+		// 结构体，包含 slab 列表和空闲对象索引数组
 		struct {
+			// 代表 slab 对象的链表的头
 			struct list_head slab_list;
-			void *freelist;	/* array of free object indexes */
-			void *s_mem;	/* first object */
+			// 指向空闲对象索引数组的指针
+			void *freelist;
+			// 指向 slab 内第一个对象的指针
+			void *s_mem;
 		};
+		// 用于 RCU（Read-Copy Update）机制的头部
 		struct rcu_head rcu_head;
 	};
+	// 活动对象的数量
 	unsigned int active;
 
 #elif defined(CONFIG_SLUB)
-
+	// 与 CONFIG_SLAB 相似，定义了 slab 的另一个版本
 	struct kmem_cache *slab_cache;
 	union {
+		// 这个版本的 slab 定义，包含了不同的字段
 		struct {
+			// 联合类型字段，可以是链表头或者一个新的结构体
 			union {
+				// 与 CONFIG_SLAB 中的 slab_list 相似，用于追踪 slab 对象的链表的头
 				struct list_head slab_list;
 #ifdef CONFIG_SLUB_CPU_PARTIAL
+				// 如果启用了 CONFIG_SLUB_CPU_PARTIAL，这里定义了一个额外的字段用于追踪下一个 slab 以及还剩下多少个 slab
 				struct {
 					struct slab *next;
-					int slabs;	/* Nr of slabs left */
+					int slabs;
 				};
 #endif
 			};
-			/* Double-word boundary */
-			void *freelist;		/* first free object */
+			// 确保 freelist 字段是双字节边界对齐的
+			void *freelist;
+			// 联合类型字段，可以是计数器或者一个新的结构体
 			union {
+				// 用于保存各种计数信息的长整数
 				unsigned long counters;
+				// 如果未启用 CONFIG_SLUB_CPU_PARTIAL，这里定义了一个结构体用于保存 inuse、objects 和 frozen 等信息
 				struct {
+					// 使用 16 位来保存 slab 中已使用对象的数量
 					unsigned inuse:16;
+					// 使用 15 位来保存 slab 中的对象总数
 					unsigned objects:15;
+					// 使用 1 位来标记 slab 是否被冻结
 					unsigned frozen:1;
 				};
 			};
 		};
+		// 用于 RCU 机制的头部
 		struct rcu_head rcu_head;
 	};
+	// 这个字段在 SLUB 中未使用，保留
 	unsigned int __unused;
 
 #elif defined(CONFIG_SLOB)
-
+	// 定义 SLAB 分配器的简单版本
 	struct list_head slab_list;
+	// 未使用字段，保留
 	void *__unused_1;
-	void *freelist;		/* first free block */
+	// 指向第一个空闲块的指针
+	void *freelist;
+	// 内存块的大小，以单元为单位
 	long units;
+	// 未使用字段，保留
 	unsigned int __unused_2;
 
 #else
+	// 如果没有配置 slab allocator，输出错误信息
 #error "Unexpected slab allocator configured"
 #endif
 
+	// 原子操作的页面引用计数，用于追踪页面的使用计数
 	atomic_t __page_refcount;
+
 #ifdef CONFIG_MEMCG
+	// 用于内存控制组的数据
 	unsigned long memcg_data;
 #endif
 };
+
 
 #define SLAB_MATCH(pg, sl)						\
 	static_assert(offsetof(struct page, pg) == offsetof(struct slab, sl))
@@ -776,9 +808,9 @@ static inline void slab_post_alloc_hook(struct kmem_cache *s,
 struct kmem_cache_node {
 #ifdef CONFIG_SLAB
 	raw_spinlock_t list_lock;
-	struct list_head slabs_partial;	/* partial list first, better asm code */
-	struct list_head slabs_full;
-	struct list_head slabs_free;
+	struct list_head slabs_partial;	/* partial list first, better asm code  部分分配的slab*/
+	struct list_head slabs_full; //已完全分配的slab
+	struct list_head slabs_free;  //空闲的 slab
 	unsigned long total_slabs;	/* length of all slab lists */
 	unsigned long free_slabs;	/* length of free slab list only */
 	unsigned long free_objects;

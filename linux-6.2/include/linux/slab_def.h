@@ -22,28 +22,28 @@ struct kmem_cache {
 /* 2) touched by every alloc & free from the backend */
 
 	slab_flags_t flags;		/* constant flags */
-	unsigned int num;		/* # of objs per slab */
+	unsigned int num;		/* slab对象数量 */
 
 /* 3) cache_grow/shrink */
 	/* order of pgs per slab (2^n) */
-	unsigned int gfporder;
+	unsigned int gfporder; //每个 slab 所使用的页框数量的阶数
 
 	/* force GFP flags, e.g. GFP_DMA */
-	gfp_t allocflags;
+	gfp_t allocflags;  /* 强制指定的 GFP 标志，例如 GFP_DMA */
 
-	size_t colour;			/* cache colouring range */
-	unsigned int colour_off;	/* colour offset */
-	unsigned int freelist_size;
+	size_t colour;			  /* 缓存着色范围 */
+	unsigned int colour_off;	/* 缓存颜色的偏移量 */
+	unsigned int freelist_size; /* 空闲列表的大小，表示当前空闲对象的数量 */
 
 	/* constructor func */
 	void (*ctor)(void *obj);
 
 /* 4) cache creation/removal */
-	const char *name;
+	const char *name; /* 内存缓存的名称 */
 	struct list_head list;
-	int refcount;
-	int object_size;
-	int align;
+	int refcount; /* 引用计数，记录当前内存缓存的引用次数 */
+	int object_size; /* 对象的大小 */
+	int align; /* 对象在内存中的对齐方式 */
 
 /* 5) statistics */
 #ifdef CONFIG_DEBUG_SLAB
@@ -85,7 +85,7 @@ struct kmem_cache {
 	unsigned int usersize;		/* Usercopy region size */
 #endif
 
-	struct kmem_cache_node *node[MAX_NUMNODES];
+	struct kmem_cache_node *node[MAX_NUMNODES];  /* 指向 kmem_cache_node 结构的数组 */
 };
 
 static inline void *nearest_obj(struct kmem_cache *cache, const struct slab *slab,

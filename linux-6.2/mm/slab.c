@@ -381,11 +381,11 @@ static inline void *index_to_obj(struct kmem_cache *cache,
 #define BOOT_CPUCACHE_ENTRIES	1
 /* internal cache of cache description objs */
 static struct kmem_cache kmem_cache_boot = {
-	.batchcount = 1,
-	.limit = BOOT_CPUCACHE_ENTRIES,
-	.shared = 1,
-	.size = sizeof(struct kmem_cache),
-	.name = "kmem_cache",
+	.batchcount = 1,//每次分配的快数为1
+	.limit = BOOT_CPUCACHE_ENTRIES, // 限制每个CPU缓存池中的块数量
+	.shared = 1, // 允许不同CPU核心共享该缓存池
+	.size = sizeof(struct kmem_cache),  // 存储的块大小为kmem_cache结构体的大小
+	.name = "kmem_cache", // 缓存的名称为"kmem_cache"
 };
 
 static DEFINE_PER_CPU(struct delayed_work, slab_reap_work);
@@ -3368,41 +3368,41 @@ free_done:
 }
 
 /*
- * Release an obj back to its cache. If the obj has a constructed state, it must
- * be in this state _before_ it is released.  Called with disabled ints.
+ * 将一个 obj 释放回其缓存。如果 obj 处于已构造状态，在释放它之前，它必须处于这种状态。 在禁用中断的情况下调用。
  */
 static __always_inline void __cache_free(struct kmem_cache *cachep, void *objp,
-					 unsigned long caller)
+                                         unsigned long caller)
 {
-	bool init;
+    bool init;
 
-	memcg_slab_free_hook(cachep, virt_to_slab(objp), &objp, 1);
+    memcg_slab_free_hook(cachep, virt_to_slab(objp), &objp, 1);
 
-	if (is_kfence_address(objp)) {
-		kmemleak_free_recursive(objp, cachep->flags);
-		__kfence_free(objp);
-		return;
-	}
+    if (is_kfence_address(objp)) {
+        kmemleak_free_recursive(objp, cachep->flags);
+        __kfence_free(objp);
+        return;
+    }
 
-	/*
-	 * As memory initialization might be integrated into KASAN,
-	 * kasan_slab_free and initialization memset must be
-	 * kept together to avoid discrepancies in behavior.
-	 */
-	init = slab_want_init_on_free(cachep);
-	if (init && !kasan_has_integrated_init())
-		memset(objp, 0, cachep->object_size);
-	/* KASAN might put objp into memory quarantine, delaying its reuse. */
-	if (kasan_slab_free(cachep, objp, init))
-		return;
+    /*
+     * 由于内存初始化可能已集成到 KASAN 中，因此 kasan_slab_free 和初始化 memset 必须
+     * 放在一起，以避免行为上的差异。
+     */
+    init = slab_want_init_on_free(cachep);
+    if (init &&!kasan_has_integrated_init())
+	    // 释放时初始化对象
+        memset(objp, 0, cachep->object_size);
+    /* KASAN 可能会将 objp 放入内存隔离区，延迟其重用。 */
+    if (kasan_slab_free(cachep, objp, init))
+        return;
 
-	/* Use KCSAN to help debug racy use-after-free. */
-	if (!(cachep->flags & SLAB_TYPESAFE_BY_RCU))
-		__kcsan_check_access(objp, cachep->object_size,
-				     KCSAN_ACCESS_WRITE | KCSAN_ACCESS_ASSERT);
+    /* 使用 KCSAN 帮助调试竞争条件下的释放后使用错误。 */
+    if (!(cachep->flags & SLAB_TYPESAFE_BY_RCU))
+        __kcsan_check_access(objp, cachep->object_size,
+                             KCSAN_ACCESS_WRITE | KCSAN_ACCESS_ASSERT);
 
-	___cache_free(cachep, objp, caller);
+    ___cache_free(cachep, objp, caller);
 }
+
 
 void ___cache_free(struct kmem_cache *cachep, void *objp,
 		unsigned long caller)
@@ -3424,10 +3424,10 @@ void ___cache_free(struct kmem_cache *cachep, void *objp,
 		return;
 
 	if (ac->avail < ac->limit) {
-		STATS_INC_FREEHIT(cachep);
+		STATS_INC_FREEHIT(cachep); //本地 CPU 缓存数量未超过 limit 则直接回收到本地 CPU 空闲缓存中
 	} else {
 		STATS_INC_FREEMISS(cachep);
-		cache_flusharray(cachep, ac);
+		cache_flusharray(cachep, ac); //超过则调用cache_flusharray()向全局 CPU 共享空闲缓存中移动
 	}
 
 	if (sk_memalloc_socks()) {
@@ -3438,7 +3438,7 @@ void ___cache_free(struct kmem_cache *cachep, void *objp,
 			return;
 		}
 	}
-
+	//将对象从缓存中移除并释放其占用的内存。
 	__free_one(ac, objp);
 }
 
@@ -3579,6 +3579,7 @@ void __do_kmem_cache_free(struct kmem_cache *cachep, void *objp,
 	debug_check_no_locks_freed(objp, cachep->object_size);
 	if (!(cachep->flags & SLAB_DEBUG_OBJECTS))
 		debug_check_no_obj_freed(objp, cachep->object_size);
+	//释放内存缓存对象
 	__cache_free(cachep, objp, caller);
 	local_irq_restore(flags);
 }

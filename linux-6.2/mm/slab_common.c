@@ -728,17 +728,17 @@ struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags)
 	unsigned int index;
 
 	if (size <= 192) {
-		if (!size)
+		if (!size)  // 如果请求分配的大小为0，则返回一个特殊指针ZERO_SIZE_PTR
 			return ZERO_SIZE_PTR;
 
-		index = size_index[size_index_elem(size)];
+		index = size_index[size_index_elem(size)]; //分配小于192的对象时，会向上对齐
 	} else {
 		if (WARN_ON_ONCE(size > KMALLOC_MAX_CACHE_SIZE))
 			return NULL;
 		index = fls(size - 1);
 	}
 
-	return kmalloc_caches[kmalloc_type(flags)][index];
+	return kmalloc_caches[kmalloc_type(flags)][index]; // 返回根据索引从kmalloc_caches数组中选择相应的kmem_cache对象
 }
 
 size_t kmalloc_size_roundup(size_t size)
@@ -952,22 +952,22 @@ void *__do_kmalloc_node(size_t size, gfp_t flags, int node, unsigned long caller
 	struct kmem_cache *s;
 	void *ret;
 
-	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE)) {
-		ret = __kmalloc_large_node(size, flags, node);
+	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE)) { /*如果请求的大小超过了最大缓存大小*/
+		ret = __kmalloc_large_node(size, flags, node); // 调用 __kmalloc_large_node 函数
 		trace_kmalloc(caller, ret, size,
 			      PAGE_SIZE << get_order(size), flags, node);
 		return ret;
 	}
 
-	s = kmalloc_slab(size, flags);
+	s = kmalloc_slab(size, flags);//根据申请的 size 获取到对应的 kmem_cache
 
 	if (unlikely(ZERO_OR_NULL_PTR(s)))
 		return s;
 
 	ret = __kmem_cache_alloc_node(s, flags, node, size, caller);
-	ret = kasan_kmalloc(s, ret, size, flags);
+	ret = kasan_kmalloc(s, ret, size, flags);  // 调用kasan_kmalloc函数进行内核地址静态分析工具（KASAN）相关操作，确保内存分配和访问的安全性
 	trace_kmalloc(caller, ret, size, s->size, flags, node);
-	return ret;
+	return ret; // 返回分配到的内存块指针
 }
 
 void *__kmalloc_node(size_t size, gfp_t flags, int node)
@@ -1000,25 +1000,41 @@ EXPORT_SYMBOL(__kmalloc_node_track_caller);
  */
 void kfree(const void *object)
 {
+	// 转换成 folio 结构体指针，便于后续判断是否为大内存块
 	struct folio *folio;
+
+	// 指向 slab 结构体的指针
 	struct slab *slab;
+
+	// 内存块所属的缓存对象指针
 	struct kmem_cache *s;
 
 	trace_kfree(_RET_IP_, object);
 
+	// 如果 object 指针为 NULL 或者首地址为 0，则直接返回，什么都不做
 	if (unlikely(ZERO_OR_NULL_PTR(object)))
 		return;
 
+	// 将 object 指针转换为 folio 结构体指针，folio 结构体由内核维护
 	folio = virt_to_folio(object);
+
+	// 如果转换后的 folio 不满足 kmem_cache 的地址范围
 	if (unlikely(!folio_test_slab(folio))) {
+		// 说明这是一个通过 kmalloc 分配的大内存块，使用专门的函数来释放
 		free_large_kmalloc(folio, (void *)object);
 		return;
 	}
 
+	// 通过之前得到的 folio 结构体指针获取到 slab 结构体指针
 	slab = folio_slab(folio);
+
 	s = slab->slab_cache;
+
+	// 通过 kmem_cache_free 释放内存，第一个参数为 kmem_cache 指针，第二个参数为要释放的内存块地址，第三个参数表示调用函数的返回地址
+	// 如果后面使用返回地址进行错误调试，这里用宏定义 _RET_IP_ 表示返回地址
 	__kmem_cache_free(s, (void *)object, _RET_IP_);
 }
+
 EXPORT_SYMBOL(kfree);
 
 /**

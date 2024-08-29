@@ -589,7 +589,7 @@ static __always_inline __alloc_size(1) void *kmalloc(size_t size, gfp_t flags)
 	if (__builtin_constant_p(size) && size > KMALLOC_MAX_CACHE_SIZE)
 		return kmalloc_large(size, flags);
 
-	return __kmalloc(size, flags);
+	return __kmalloc(size, flags); // __kmalloc->__do_kmalloc_node->kmalloc_slab
 }
 #endif
 
