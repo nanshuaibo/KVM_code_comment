@@ -659,20 +659,22 @@ void __init create_boot_cache(struct kmem_cache *s, const char *name,
 	s->refcount = -1;	/* Exempt from merging for now */
 }
 
+// 创建一个用于管理特定大小对象的kmem_cache，并将其添加到slab_caches链表中
 struct kmem_cache *__init create_kmalloc_cache(const char *name,
 		unsigned int size, slab_flags_t flags,
 		unsigned int useroffset, unsigned int usersize)
 {
+	// 从kmem_cache中申请一个slab，用来保存记录struct kmem_cache_node实例的kmem_cache
 	struct kmem_cache *s = kmem_cache_zalloc(kmem_cache, GFP_NOWAIT);
 
 	if (!s)
 		panic("Out of memory when creating slab %s\n", name);
-
+	// 使用从kmem_cache slab中申请来的内存初始化kmem_cache
 	create_boot_cache(s, name, size, flags | SLAB_KMALLOC, useroffset,
 								usersize);
 	kasan_cache_create_kmalloc(s);
-	list_add(&s->list, &slab_caches);
-	s->refcount = 1;
+	list_add(&s->list, &slab_caches); // 将初始化后的kmem_cache添加到slab_caches链表中
+	s->refcount = 1; // 设置kmem_cache的引用计数为1
 	return s;
 }
 
@@ -898,6 +900,7 @@ new_kmalloc_cache(int idx, enum kmalloc_cache_type type, slab_flags_t flags)
  * may already have been created because they were needed to
  * enable allocations for slab creation.
  */
+ //生成不同类型的kmem_cache
 void __init create_kmalloc_caches(slab_flags_t flags)
 {
 	int i;
@@ -906,7 +909,7 @@ void __init create_kmalloc_caches(slab_flags_t flags)
 	/*
 	 * Including KMALLOC_CGROUP if CONFIG_MEMCG_KMEM defined
 	 */
-	for (type = KMALLOC_NORMAL; type < NR_KMALLOC_TYPES; type++) {
+	for (type = KMALLOC_NORMAL; type < NR_KMALLOC_TYPES; type++) { //生成不同类型的kmem_cache
 		for (i = KMALLOC_SHIFT_LOW; i <= KMALLOC_SHIFT_HIGH; i++) {
 			if (!kmalloc_caches[type][i])
 				new_kmalloc_cache(i, type, flags);
@@ -952,8 +955,8 @@ void *__do_kmalloc_node(size_t size, gfp_t flags, int node, unsigned long caller
 	struct kmem_cache *s;
 	void *ret;
 
-	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE)) { /*如果请求的大小超过了最大缓存大小*/
-		ret = __kmalloc_large_node(size, flags, node); // 调用 __kmalloc_large_node 函数
+	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE)) { /*如果请求的大小超过了最大缓存大小 4k*/
+		ret = __kmalloc_large_node(size, flags, node); // 调用 __kmalloc_large_node 函数,从buddy系统进行分配
 		trace_kmalloc(caller, ret, size,
 			      PAGE_SIZE << get_order(size), flags, node);
 		return ret;

@@ -1230,10 +1230,13 @@ void __init kmem_cache_init(void)
 	/*
 	 * struct kmem_cache size depends on nr_node_ids & nr_cpu_ids
 	 */
+    // 完成第一个kmem cache实例kmem_cache的初始化
+    // 第一个kmem cache实例用于为创建其他kmem cache实例分配空间
 	create_boot_cache(kmem_cache, "kmem_cache",
 		offsetof(struct kmem_cache, node) +
 				  nr_node_ids * sizeof(struct kmem_cache_node *),
 				  SLAB_HWCACHE_ALIGN, 0, 0);
+	// kmem cache实例加入slab_caches链表
 	list_add(&kmem_cache->list, &slab_caches);
 	slab_state = PARTIAL;
 
@@ -1245,7 +1248,7 @@ void __init kmem_cache_init(void)
 				kmalloc_info[INDEX_NODE].name[KMALLOC_NORMAL],
 				kmalloc_info[INDEX_NODE].size,
 				ARCH_KMALLOC_FLAGS, 0,
-				kmalloc_info[INDEX_NODE].size);
+				kmalloc_info[INDEX_NODE].size); //使用kmalloc_info中保存的信息来生成不同大小的kmem_cache
 	slab_state = PARTIAL_NODE;
 	setup_kmalloc_cache_index_table();
 
