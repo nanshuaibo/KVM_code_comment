@@ -196,17 +196,14 @@ pmd_t *mm_find_pmd(struct mm_struct *mm, unsigned long address);
  */
 
 /*
- * Structure for holding the mostly immutable allocation parameters passed
- * between functions involved in allocations, including the alloc_pages*
- * family of functions.
+ * 一个用于存储在参与分配的函数之间传递的、大多数情况下是不可变的分配参数的结构体，
+ * 包括alloc_pages*系列函数。
+ * 
+ * nodemask、migratetype和highest_zoneidx在__alloc_pages()函数中仅初始化一次，之后永远不会改变。
  *
- * nodemask, migratetype and highest_zoneidx are initialized only once in
- * __alloc_pages() and then never change.
- *
- * zonelist, preferred_zone and highest_zoneidx are set first in
- * __alloc_pages() for the fast path, and might be later changed
- * in __alloc_pages_slowpath(). All other functions pass the whole structure
- * by a const pointer.
+ * zonelist、preferred_zone和highest_zoneidx在__alloc_pages()函数的快速路径中最先被设置，
+ * 但稍后可能会在__alloc_pages_slowpath()函数中被修改。
+ * 所有其他函数通过一个const指针传递整个结构体。
  */
 struct alloc_context {
 	struct zonelist *zonelist;
@@ -215,18 +212,15 @@ struct alloc_context {
 	int migratetype;
 
 	/*
-	 * highest_zoneidx represents highest usable zone index of
-	 * the allocation request. Due to the nature of the zone,
-	 * memory on lower zone than the highest_zoneidx will be
-	 * protected by lowmem_reserve[highest_zoneidx].
+	 * highest_zoneidx表示分配请求的最高可用区域索引。
+	 * 由于区域的性质，低于最高区域索引的内存将受到lowmem_reserve[highest_zoneidx]的保护。
 	 *
-	 * highest_zoneidx is also used by reclaim/compaction to limit
-	 * the target zone since higher zone than this index cannot be
-	 * usable for this allocation request.
+	 * highest_zoneidx也被回收/压缩使用，以限制目标区域，因为高于此索引的区域对于这个分配请求不可用。
 	 */
 	enum zone_type highest_zoneidx;
 	bool spread_dirty_pages;
 };
+
 
 /*
  * This function returns the order of a free page in the buddy system. In

@@ -3997,29 +3997,29 @@ bool __zone_watermark_ok(struct zone *z, unsigned int order, unsigned long mark,
 	 * are not met, then a high-order request also cannot go ahead
 	 * even if a suitable page happened to be free.
 	 */
-	if (free_pages <= min + z->lowmem_reserve[highest_zoneidx])
+	if (free_pages <= min + z->lowmem_reserve[highest_zoneidx]) //水位未达到健康值
 		return false;
 
 	/* If this is an order-0 request then the watermark is fine */
 	if (!order)
-		return true;
+		return true; //0阶分配，水位健康
 
 	/* For a high-order request, check at least one suitable page is free */
-	for (o = order; o < MAX_ORDER; o++) {
+	for (o = order; o < MAX_ORDER; o++) { //遍历各阶free_area结构体
 		struct free_area *area = &z->free_area[o];
 		int mt;
 
 		if (!area->nr_free)
 			continue;
 
-		for (mt = 0; mt < MIGRATE_PCPTYPES; mt++) {
+		for (mt = 0; mt < MIGRATE_PCPTYPES; mt++) {//遍历每个迁移类型的free_area
 			if (!free_area_empty(area, mt))
-				return true;
+				return true; //找到非空页面直接返回
 		}
 
 #ifdef CONFIG_CMA
 		if ((alloc_flags & ALLOC_CMA) &&
-		    !free_area_empty(area, MIGRATE_CMA)) {
+		    ! (area, MIGRATE_CMA)) {
 			return true;
 		}
 #endif
@@ -4472,6 +4472,7 @@ out:
 
 #ifdef CONFIG_COMPACTION
 /* Try memory compaction for high-order allocations before reclaim */
+//内存压缩/规整
 static struct page *
 __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 		unsigned int alloc_flags, const struct alloc_context *ac,
@@ -4481,7 +4482,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	unsigned long pflags;
 	unsigned int noreclaim_flag;
 
-	if (!order)
+	if (!order) //0阶(1页)不需要进行整理(这说明是内存不足，而不是内存碎片导致)
 		return NULL;
 
 	psi_memstall_enter(&pflags);
@@ -4489,10 +4490,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 	noreclaim_flag = memalloc_noreclaim_save();
 
 	*compact_result = try_to_compact_pages(gfp_mask, order, alloc_flags, ac,
-								prio, &page);
-
-	memalloc_noreclaim_restore(noreclaim_flag);
-	psi_memstall_leave(&pflags);
+								prio, &page); //尝试内存规整 try_to_compact_pages->compact_zone_order->compact_zone
 	delayacct_compact_end();
 
 	if (*compact_result == COMPACT_SKIPPED)
@@ -5016,7 +5014,7 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 						struct alloc_context *ac)
 {
 	bool can_direct_reclaim = gfp_mask & __GFP_DIRECT_RECLAIM;
-	const bool costly_order = order > PAGE_ALLOC_COSTLY_ORDER;
+	const bool costly_order = order > PAGE_ALLOC_COSTLY_ORDER; //大于3为高阶内存分配
 	struct page *page = NULL;
 	unsigned int alloc_flags;
 	unsigned long did_some_progress;
@@ -5087,14 +5085,11 @@ restart:
 		goto got_pg;
 
 	/*
-	 * For costly allocations, try direct compaction first, as it's likely
-	 * that we have enough base pages and don't need to reclaim. For non-
-	 * movable high-order allocations, do that as well, as compaction will
-	 * try prevent permanent fragmentation by migrating from blocks of the
-	 * same migratetype.
-	 * Don't try this for allocations that are allowed to ignore
-	 * watermarks, as the ALLOC_NO_WATERMARKS attempt didn't yet happen.
+	 * 对于代价高昂的分配，首先尝试直接压缩，因为我们可能有足够的基础页面，不需要回收。对于不可移动的高阶分配，也这样做，因为压缩
+	 * 将尝试通过从相同迁移类型的块迁移来防止永久碎片化。
+	 * 对于允许忽略水印的分配，不要尝试这样做，因为 ALLOC_NO_WATERMARKS 尝试尚未发生。
 	 */
+
 	if (can_direct_reclaim &&
 			(costly_order ||
 			   (order > 0 && ac->migratetype != MIGRATE_MOVABLE))

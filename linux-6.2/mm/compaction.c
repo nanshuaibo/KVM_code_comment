@@ -1261,7 +1261,7 @@ static bool suitable_migration_source(struct compact_control *cc,
 	block_mt = get_pageblock_migratetype(page);
 
 	if (cc->migratetype == MIGRATE_MOVABLE)
-		return is_migrate_movable(block_mt);
+		return is_migrate_movable(block_mt);//可移动页
 	else
 		return block_mt == cc->migratetype;
 }
@@ -1899,6 +1899,7 @@ static isolate_migrate_t isolate_migratepages(struct compact_control *cc)
 	 * Iterate over whole pageblocks until we find the first suitable.
 	 * Do not cross the free scanner.
 	 */
+	 // 扫描内存区所有的内存页
 	for (; block_end_pfn <= cc->free_pfn;
 			fast_find_block = false,
 			cc->migrate_pfn = low_pfn = block_end_pfn,
@@ -1912,7 +1913,7 @@ static isolate_migrate_t isolate_migratepages(struct compact_control *cc)
 		 */
 		if (!(low_pfn % (COMPACT_CLUSTER_MAX * pageblock_nr_pages)))
 			cond_resched();
-
+		//通过页框号获取对应的struct page
 		page = pageblock_pfn_to_page(block_start_pfn,
 						block_end_pfn, cc->zone);
 		if (!page)
@@ -1937,7 +1938,7 @@ static isolate_migrate_t isolate_migratepages(struct compact_control *cc)
 		 * that all remaining blocks between source and target are
 		 * unsuitable and the compaction scanners fail to meet.
 		 */
-		if (!suitable_migration_source(cc, page)) {
+		if (!suitable_migration_source(cc, page)) { //不可移动页就跳过
 			update_cached_migrate(cc, block_end_pfn);
 			continue;
 		}
@@ -2166,6 +2167,19 @@ static enum compact_result compact_finished(struct compact_control *cc)
 	return ret;
 }
 
+/**
+ * __compaction_suitable - 判断当前区域是否适合进行内存压缩
+ * @zone: 要检查的内存区域
+ * @order: 分配的内存阶数
+ * @alloc_flags: 分配标志
+ * @highest_zoneidx: 最高区域索引
+ * @wmark_target: 水印目标
+ *
+ * 返回值：
+ * COMPACT_SKIPPED - 如果空闲页数太少，不适合压缩
+ * COMPACT_SUCCESS - 如果在不进行压缩的情况下分配会成功
+ * COMPACT_CONTINUE - 如果现在应该运行压缩
+ */
 static enum compact_result __compaction_suitable(struct zone *zone, int order,
 					unsigned int alloc_flags,
 					int highest_zoneidx,
@@ -2173,49 +2187,50 @@ static enum compact_result __compaction_suitable(struct zone *zone, int order,
 {
 	unsigned long watermark;
 
+	// 如果分配阶数是通过 compaction 获得的，则直接返回 COMPACT_CONTINUE
 	if (is_via_compact_memory(order))
 		return COMPACT_CONTINUE;
 
+	// 获取当前区域的水印值
 	watermark = wmark_pages(zone, alloc_flags & ALLOC_WMARK_MASK);
+
 	/*
-	 * If watermarks for high-order allocation are already met, there
-	 * should be no need for compaction at all.
+	 * 如果当前区域的水印值表明高阶分配仍然可能成功，
+	 * 那么实际上完全没有必要进行压缩。
 	 */
 	if (zone_watermark_ok(zone, order, watermark, highest_zoneidx,
 								alloc_flags))
 		return COMPACT_SUCCESS;
 
-	/*
-	 * Watermarks for order-0 must be met for compaction to be able to
-	 * isolate free pages for migration targets. This means that the
-	 * watermark and alloc_flags have to match, or be more pessimistic than
-	 * the check in __isolate_free_page(). We don't use the direct
-	 * compactor's alloc_flags, as they are not relevant for freepage
-	 * isolation. We however do use the direct compactor's highest_zoneidx
-	 * to skip over zones where lowmem reserves would prevent allocation
-	 * even if compaction succeeds.
-	 * For costly orders, we require low watermark instead of min for
-	 * compaction to proceed to increase its chances.
-	 * ALLOC_CMA is used, as pages in CMA pageblocks are considered
-	 * suitable migration targets
-	 */
-	watermark = (order > PAGE_ALLOC_COSTLY_ORDER) ?
+	// 如果是高阶分配，我们需要检查是否有足够的空闲页来进行迁移。
+	// 这需要使用比最低水印更保守的水印值。
+	watermark = (order > PAGE_ALLOC_COSTLY_ORDER)?
 				low_wmark_pages(zone) : min_wmark_pages(zone);
+
+	// 考虑到阶数为0的分配也可能失败，我们需要为迁移目标隔离空闲页。
+	// 因此，需要在水印值上增加一个 compaction_gap，以确保有足够的空闲页。
 	watermark += compact_gap(order);
+
+	/*
+	 * 检查是否有足够的空闲页来进行压缩。使用 __zone_watermark_ok 函数是因为它可以让我们指定要检查的阶数（在这个例子中是0），
+	 * 并且它可以根据需要忽略一些分配标志，比如 ALLOC_CMA。
+	 */
 	if (!__zone_watermark_ok(zone, 0, watermark, highest_zoneidx,
 						ALLOC_CMA, wmark_target))
 		return COMPACT_SKIPPED;
 
+	// 如果我们到达这里，说明当前区域适合进行压缩
 	return COMPACT_CONTINUE;
 }
 
 /*
- * compaction_suitable: Is this suitable to run compaction on this zone now?
- * Returns
- *   COMPACT_SKIPPED  - If there are too few free pages for compaction
- *   COMPACT_SUCCESS  - If the allocation would succeed without compaction
- *   COMPACT_CONTINUE - If compaction should run now
+ * compaction_suitable：判断该当前区域是否适合压缩
+ * 返回值：
+ *   COMPACT_SKIPPED - 如果空闲页数太少，不适合压缩
+ *   COMPACT_SUCCESS - 如果在不进行压缩的情况下分配会成功
+ *   COMPACT_CONTINUE - 如果现在应该运行压缩
  */
+
 enum compact_result compaction_suitable(struct zone *zone, int order,
 					unsigned int alloc_flags,
 					int highest_zoneidx)
@@ -2226,22 +2241,20 @@ enum compact_result compaction_suitable(struct zone *zone, int order,
 	ret = __compaction_suitable(zone, order, alloc_flags, highest_zoneidx,
 				    zone_page_state(zone, NR_FREE_PAGES));
 	/*
-	 * fragmentation index determines if allocation failures are due to
-	 * low memory or external fragmentation
-	 *
-	 * index of -1000 would imply allocations might succeed depending on
-	 * watermarks, but we already failed the high-order watermark check
-	 * index towards 0 implies failure is due to lack of memory
-	 * index towards 1000 implies failure is due to fragmentation
-	 *
-	 * Only compact if a failure would be due to fragmentation. Also
-	 * ignore fragindex for non-costly orders where the alternative to
-	 * a successful reclaim/compaction is OOM. Fragindex and the
-	 * vm.extfrag_threshold sysctl is meant as a heuristic to prevent
-	 * excessive compaction for costly orders, but it should not be at the
-	 * expense of system stability.
+	 * 碎片化指数用于确定内存分配失败是由于内存不足还是外部碎片
+	 * 
+	 * -1000 的指数意味着根据水位标记（watermarks），分配仍可能成功，
+	 * 但高阶水位标记检查已失败意味着失败是由于内存不足
+	 * 指数接近0意味着失败是由于缺少内存
+	 * 指数接近1000意味着失败是由于碎片化
+	 * 
+	 * 仅在因碎片化导致失败时才进行压缩。对于非昂贵的分配阶数，
+	 * 如果成功回收/压缩的替代方案是 OOM（内存不足错误），则忽略碎片化指数。
+	 * 碎片化指数和 vm.extfrag_threshold 系统控制参数旨在作为防止昂贵分配阶数过度压缩的启发式方法，
+	 * 但不应以牺牲系统稳定性为代价。
 	 */
-	if (ret == COMPACT_CONTINUE && (order > PAGE_ALLOC_COSTLY_ORDER)) {
+
+	if (ret == COMPACT_CONTINUE && (order > PAGE_ALLOC_COSTLY_ORDER)) { //高贵内存(order > 3)需要计算碎片化指数
 		fragindex = fragmentation_index(zone, order);
 		if (fragindex >= 0 && fragindex <= sysctl_extfrag_threshold)
 			ret = COMPACT_NOT_SUITABLE_ZONE;
@@ -2309,6 +2322,8 @@ compact_zone(struct compact_control *cc, struct capture_control *capc)
 	INIT_LIST_HEAD(&cc->migratepages);
 
 	cc->migratetype = gfp_migratetype(cc->gfp_mask);
+
+	//判断是否可以进行规整
 	ret = compaction_suitable(cc->zone, cc->order, cc->alloc_flags,
 							cc->highest_zoneidx);
 	/* Compaction is likely to fail */
@@ -2388,6 +2403,7 @@ compact_zone(struct compact_control *cc, struct capture_control *capc)
 			cc->rescan = true;
 		}
 
+		//收集可移动的内存页列表
 		switch (isolate_migratepages(cc)) {
 		case ISOLATE_ABORT:
 			ret = COMPACT_CONTENDED;
@@ -2411,6 +2427,7 @@ compact_zone(struct compact_control *cc, struct capture_control *capc)
 			last_migrated_pfn = iteration_start_pfn;
 		}
 
+		//将可移动的内存页列表迁移到空闲列表中
 		err = migrate_pages(&cc->migratepages, compaction_alloc,
 				compaction_free, (unsigned long)cc, cc->mode,
 				MR_COMPACTION, &nr_succeeded);
@@ -2529,7 +2546,7 @@ static enum compact_result compact_zone_order(struct zone *zone, int order,
 	barrier();
 	WRITE_ONCE(current->capture_control, &capc);
 
-	ret = compact_zone(&cc, &capc);
+	ret = compact_zone(&cc, &capc);//内存规整
 
 	VM_BUG_ON(!list_empty(&cc.freepages));
 	VM_BUG_ON(!list_empty(&cc.migratepages));
@@ -2556,16 +2573,17 @@ static enum compact_result compact_zone_order(struct zone *zone, int order,
 int sysctl_extfrag_threshold = 500;
 
 /**
- * try_to_compact_pages - Direct compact to satisfy a high-order allocation
- * @gfp_mask: The GFP mask of the current allocation
- * @order: The order of the current allocation
- * @alloc_flags: The allocation flags of the current allocation
- * @ac: The context of current allocation
- * @prio: Determines how hard direct compaction should try to succeed
- * @capture: Pointer to free page created by compaction will be stored here
+ * try_to_compact_pages - 尝试压缩页面以满足高阶分配
+ * @gfp_mask: 当前分配的 GFP 掩码
+ * @order: 当前分配的阶数
+ * @alloc_flags: 当前分配的分配标志
+ * @ac: 当前分配的上下文
+ * @prio: 决定直接压缩应尝试成功的难易程度
+ * @capture: 指向通过压缩创建的空闲页面的指针将存储在这里
  *
- * This is the main entry point for direct page compaction.
+ * 这是直接页面压缩的主要入口点。
  */
+
 enum compact_result try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 		unsigned int alloc_flags, const struct alloc_context *ac,
 		enum compact_priority prio, struct page **capture)
@@ -2584,7 +2602,7 @@ enum compact_result try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 
 	trace_mm_compaction_try_to_compact_pages(order, gfp_mask, prio);
 
-	/* Compact each zone in the list */
+	/* Compact each zone in the list 遍历所有的内存区*/
 	for_each_zone_zonelist_nodemask(zone, z, ac->zonelist,
 					ac->highest_zoneidx, ac->nodemask) {
 		enum compact_result status;
@@ -2595,6 +2613,7 @@ enum compact_result try_to_compact_pages(gfp_t gfp_mask, unsigned int order,
 			continue;
 		}
 
+		//开始内存碎片整理
 		status = compact_zone_order(zone, order, gfp_mask, prio,
 				alloc_flags, ac->highest_zoneidx, capture);
 		rc = max(status, rc);

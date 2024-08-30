@@ -1038,12 +1038,7 @@ struct contig_page_info {
 };
 
 /*
- * Calculate the number of free pages in a zone, how many contiguous
- * pages are free and how many are large enough to satisfy an allocation of
- * the target size. Note that this function makes no attempt to estimate
- * how many suitable free blocks there *might* be if MOVABLE pages were
- * migrated. Calculating that is possible, but expensive and can be
- * figured out from userspace
+ * 计算一个区域中的空闲页数，有多少连续的空闲页，以及有多少大到足以满足目标大小的分配。请注意，这个函数没有尝试估计如果可移动页面被迁移，可能会有多少合适的空闲块。这是可以计算的，但是代价昂贵，并且可以从用户空间中找出
  */
 static void fill_contig_page_info(struct zone *zone,
 				unsigned int suitable_order,
@@ -1059,30 +1054,27 @@ static void fill_contig_page_info(struct zone *zone,
 		unsigned long blocks;
 
 		/*
-		 * Count number of free blocks.
+		 * 计算空闲块的数量。
 		 *
-		 * Access to nr_free is lockless as nr_free is used only for
-		 * diagnostic purposes. Use data_race to avoid KCSAN warning.
+		 * 对 nr_free 的访问是无锁的，因为 nr_free 仅用于诊断目的。使用 data_race 来避免 KCSAN 警告。
 		 */
 		blocks = data_race(zone->free_area[order].nr_free);
 		info->free_blocks_total += blocks;
 
-		/* Count free base pages */
+		/* 计算空闲基页数 */
 		info->free_pages += blocks << order;
 
-		/* Count the suitable free blocks */
+		/* 计算合适的空闲块数量 */
 		if (order >= suitable_order)
 			info->free_blocks_suitable += blocks <<
 						(order - suitable_order);
 	}
 }
 
+
 /*
- * A fragmentation index only makes sense if an allocation of a requested
- * size would fail. If that is true, the fragmentation index indicates
- * whether external fragmentation or a lack of memory was the problem.
- * The value can be used to determine if page reclaim or compaction
- * should be used
+ * 只有在请求的分配大小失败时，碎片化指数才有意义。如果是这样，碎片化指数表明
+ * 问题是外部碎片化还是内存不足。该值可用于确定是否应使用页面回收或压缩
  */
 static int __fragmentation_index(unsigned int order, struct contig_page_info *info)
 {
@@ -1091,18 +1083,18 @@ static int __fragmentation_index(unsigned int order, struct contig_page_info *in
 	if (WARN_ON_ONCE(order >= MAX_ORDER))
 		return 0;
 
-	if (!info->free_blocks_total)
+	if (!info->free_blocks_total) //没有空闲内存块，内存不足直接返回
 		return 0;
 
-	/* Fragmentation index only makes sense when a request would fail */
-	if (info->free_blocks_suitable)
+	/* 仅当请求将失败时，碎片化指数才有意义 */
+	if (info->free_blocks_suitable) //没有合适阶数的内存块
 		return -1000;
 
 	/*
-	 * Index is between 0 and 1 so return within 3 decimal places
+	 * 索引在 0 到 1 之间，因此保留 3 位小数
 	 *
-	 * 0 => allocation would fail due to lack of memory
-	 * 1 => allocation would fail due to fragmentation
+	 * 0 => 由于缺乏内存，分配将失败
+	 * 1 => 由于碎片化，分配将失败
 	 */
 	return 1000 - div_u64( (1000+(div_u64(info->free_pages * 1000ULL, requested))), info->free_blocks_total);
 }
@@ -1130,7 +1122,7 @@ int fragmentation_index(struct zone *zone, unsigned int order)
 {
 	struct contig_page_info info;
 
-	fill_contig_page_info(zone, order, &info);
+	fill_contig_page_info(zone, order, &info); //填充contig_page_info
 	return __fragmentation_index(order, &info);
 }
 #endif
