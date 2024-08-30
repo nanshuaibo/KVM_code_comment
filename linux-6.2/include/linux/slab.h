@@ -705,6 +705,7 @@ static inline __alloc_size(1, 2) void *kcalloc_node(size_t n, size_t size, gfp_t
 /*
  * Shortcuts
  */
+// 分配一个内存缓存对象
 static inline void *kmem_cache_zalloc(struct kmem_cache *k, gfp_t flags)
 {
 	return kmem_cache_alloc(k, flags | __GFP_ZERO);
