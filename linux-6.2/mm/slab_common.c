@@ -867,6 +867,7 @@ void __init setup_kmalloc_cache_index_table(void)
 	}
 }
 
+//创建和初始化以"kmalloc-"开头命名的kmem_cache实例
 static void __init
 new_kmalloc_cache(int idx, enum kmalloc_cache_type type, slab_flags_t flags)
 {

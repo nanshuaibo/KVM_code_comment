@@ -1266,7 +1266,7 @@ void __init kmem_cache_init(void)
 		}
 	}
 
-	create_kmalloc_caches(ARCH_KMALLOC_FLAGS);
+	create_kmalloc_caches(ARCH_KMALLOC_FLAGS); //create_kmalloc_caches->new_kmalloc_cache创建kmalloc的kmem_cache实例
 }
 
 void __init kmem_cache_init_late(void)
