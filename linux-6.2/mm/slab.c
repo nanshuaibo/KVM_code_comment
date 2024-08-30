@@ -2863,25 +2863,39 @@ static noinline void *cache_alloc_pfmemalloc(struct kmem_cache *cachep,
  * Slab list should be fixed up by fixup_slab_list() for existing slab
  * or cache_grow_end() for new slab
  */
+/**
+ * 静态内联函数 alloc_block，用于从给定的 slab 中分配对象到 array_cache
+ *
+ * @param cachep: kmem_cache 结构体指针，表示内存缓存池
+ * @param ac: array_cache 结构体指针，表示 array_cache
+ * @param slab: slab 结构体指针，表示要分配对象的 slab
+ * @param batchcount: 要分配的对象数量
+ * @return: 返回剩余未分配的对象数量
+ */
 static __always_inline int alloc_block(struct kmem_cache *cachep,
 		struct array_cache *ac, struct slab *slab, int batchcount)
 {
 	/*
-	 * There must be at least one object available for
-	 * allocation.
+	 * 断言，确保slab上至少有一个对象可供分配。
 	 */
 	BUG_ON(slab->active >= cachep->num);
 
 	while (slab->active < cachep->num && batchcount--) {
+		// 统计信息，增加已分配对象的计数。
 		STATS_INC_ALLOCED(cachep);
+		// 统计信息，增加活动对象的计数。
 		STATS_INC_ACTIVE(cachep);
+		// 设置高水位标记，可能用于记录某个时刻的状态信息。
 		STATS_SET_HIGH(cachep);
 
+		// 从slab中获取一个对象，并将其指针放入ac的entry数组中。
 		ac->entry[ac->avail++] = slab_get_obj(cachep, slab);
 	}
 
+	// 返回batchcount的值，其表示还剩余多少个对象没有被分配。
 	return batchcount;
 }
+
 
 // 用于在缓存(cache)需要补充新对象时进行分配和补充
 static void *cache_alloc_refill(struct kmem_cache *cachep, gfp_t flags)
