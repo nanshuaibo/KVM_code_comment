@@ -1074,20 +1074,26 @@ static int tdp_mmu_map_handle_target_level(struct kvm_vcpu *vcpu,
 	int ret = RET_PF_FIXED;
 	bool wrprot = false;
 
+	// 检查是否目标SP（Shadow Page）的级别与故障的目标级别一致
 	if (WARN_ON_ONCE(sp->role.level != fault->goal_level))
 		return RET_PF_RETRY;
 
+	// 若无故障槽（fault->slot），则创建一个MMIO类型的SPTE
 	if (unlikely(!fault->slot))
 		new_spte = make_mmio_spte(vcpu, iter->gfn, ACC_ALL);
 	else
+		// 创建一个新的SPTE，用于处理故障，同时更新访问控制权限等信息
 		wrprot = make_spte(vcpu, sp, fault->slot, ACC_ALL, iter->gfn,
 					 fault->pfn, iter->old_spte, fault->prefetch, true,
 					 fault->map_writable, &new_spte);
 
+	// 若新的SPTE与旧的SPTE相同，则故障为误报
 	if (new_spte == iter->old_spte)
 		ret = RET_PF_SPURIOUS;
+	// 尝试原子性地设置新的SPTE
 	else if (tdp_mmu_set_spte_atomic(vcpu->kvm, iter, new_spte))
 		return RET_PF_RETRY;
+	// 若旧的SPTE是一个存在的SPTE且不是最后一个SPTE，则刷新远程TLB项
 	else if (is_shadow_present_pte(iter->old_spte) &&
 		 !is_last_spte(iter->old_spte, iter->level))
 		kvm_flush_remote_tlbs_with_address(vcpu->kvm, sp->gfn,
@@ -1098,12 +1104,14 @@ static int tdp_mmu_map_handle_target_level(struct kvm_vcpu *vcpu,
 	 * protected, emulation is needed. If the emulation was skipped,
 	 * the vCPU would have the same fault again.
 	 */
+	// 如果页面故障是由写操作引起的，但页面是写保护的，则需要进行模拟操作
 	if (wrprot) {
 		if (fault->write)
 			ret = RET_PF_EMULATE;
 	}
 
 	/* If a MMIO SPTE is installed, the MMIO will need to be emulated. */
+	// 若安装了一个MMIO类型的SPTE，则需要对MMIO进行模拟
 	if (unlikely(is_mmio_spte(new_spte))) {
 		vcpu->stat.pf_mmio_spte_created++;
 		trace_mark_mmio_spte(rcu_dereference(iter->sptep), iter->gfn,
@@ -1116,6 +1124,7 @@ static int tdp_mmu_map_handle_target_level(struct kvm_vcpu *vcpu,
 
 	return ret;
 }
+
 
 /*
  * tdp_mmu_link_sp - Replace the given spte with an spte pointing to the
