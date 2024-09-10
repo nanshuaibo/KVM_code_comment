@@ -63,8 +63,8 @@ enum hrtimer_mode {
  * Return values for the callback function
  */
 enum hrtimer_restart {
-	HRTIMER_NORESTART,	/* Timer is not restarted */
-	HRTIMER_RESTART,	/* Timer must be restarted */
+	HRTIMER_NORESTART,	/* Timer is not restarted */ //不需要被重新激活
+	HRTIMER_RESTART,	/* Timer must be restarted */ //需要被重新激活
 };
 
 /*
@@ -91,8 +91,9 @@ enum hrtimer_restart {
  *
  * All state transitions are protected by cpu_base->lock.
  */
-#define HRTIMER_STATE_INACTIVE	0x00
-#define HRTIMER_STATE_ENQUEUED	0x01
+//定时器当前状态
+#define HRTIMER_STATE_INACTIVE	0x00 //定时器未激活
+#define HRTIMER_STATE_ENQUEUED	0x01 //定时器已经被排入红黑树中
 
 /**
  * struct hrtimer - the basic hrtimer structure
@@ -117,8 +118,8 @@ enum hrtimer_restart {
  */
 struct hrtimer {
 	struct timerqueue_node		node;
-	ktime_t				_softexpires;
-	enum hrtimer_restart		(*function)(struct hrtimer *);
+	ktime_t				_softexpires; //定时器到期时间
+	enum hrtimer_restart		(*function)(struct hrtimer *); //回调函数，返回值表示hrtimer是否需要被重新激活
 	struct hrtimer_clock_base	*base;
 	u8				state;
 	u8				is_rel;
@@ -157,8 +158,8 @@ struct hrtimer_sleeper {
  * @offset:		offset of this clock to the monotonic base
  */
 struct hrtimer_clock_base {
-	struct hrtimer_cpu_base	*cpu_base;
-	unsigned int		index;
+	struct hrtimer_cpu_base	*cpu_base;// 指向所属cpu的hrtimer_cpu_base结构 
+	unsigned int		index; // 红黑树，包含了所有使用该时间基准系统的hrtimer  
 	clockid_t		clockid;
 	seqcount_raw_spinlock_t	seq;
 	struct hrtimer		*running;
@@ -167,15 +168,16 @@ struct hrtimer_clock_base {
 	ktime_t			offset;
 } __hrtimer_clock_base_align;
 
+//hrtimer的到期时间可以基于以下几种时间基准系统
 enum  hrtimer_base_type {
-	HRTIMER_BASE_MONOTONIC,
-	HRTIMER_BASE_REALTIME,
-	HRTIMER_BASE_BOOTTIME,
-	HRTIMER_BASE_TAI,
-	HRTIMER_BASE_MONOTONIC_SOFT,
-	HRTIMER_BASE_REALTIME_SOFT,
-	HRTIMER_BASE_BOOTTIME_SOFT,
-	HRTIMER_BASE_TAI_SOFT,
+	HRTIMER_BASE_MONOTONIC, //单调递增的monotonic时间，不包含休眠时间  
+	HRTIMER_BASE_REALTIME,  //平常使用的墙上真实时间  
+	HRTIMER_BASE_BOOTTIME,  //单调递增的boottime，包含休眠时间 
+	HRTIMER_BASE_TAI,       //以国际原子时（TAI，International Atomic Time）为基准
+	HRTIMER_BASE_MONOTONIC_SOFT, //以系统启动时刻为参考点，在系统挂起和恢复时可以被调整
+	HRTIMER_BASE_REALTIME_SOFT,  //以实时时钟为参考点
+	HRTIMER_BASE_BOOTTIME_SOFT,  //与 HRTIMER_BASE_MONOTONIC_SOFT 相似，但不会受到系统挂起和恢复的影响
+	HRTIMER_BASE_TAI_SOFT,       //与 HRTIMER_BASE_MONOTONIC_SOFT 类似，但以 TAI 时间为参考点
 	HRTIMER_MAX_CLOCK_BASES,
 };
 
@@ -211,6 +213,7 @@ enum  hrtimer_base_type {
  *	 Do not dereference the pointer because it is not reliable on
  *	 cross cpu removals.
  */
+// 每个cpu单独管理属于自己的hrtimer，为此，专门定义了一个结构hrtimer_cpu_base
 struct hrtimer_cpu_base {
 	raw_spinlock_t			lock;
 	unsigned int			cpu;
