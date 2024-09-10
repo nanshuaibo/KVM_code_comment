@@ -111,22 +111,26 @@ static inline struct virtio_blk_vq *get_virtio_blk_vq(struct blk_mq_hw_ctx *hctx
 
 static int virtblk_add_req(struct virtqueue *vq, struct virtblk_req *vbr)
 {
-	struct scatterlist hdr, status, *sgs[3];
-	unsigned int num_out = 0, num_in = 0;
+	struct scatterlist hdr, status, *sgs[3]; // 定义scatterlist结构体和指针数组
+	unsigned int num_out = 0, num_in = 0;// 定义输出和输入scatterlist的数量
 
+	// 初始化头部scatterlist，包含请求头信息
 	sg_init_one(&hdr, &vbr->out_hdr, sizeof(vbr->out_hdr));
+
+	// 将头部scatterlist添加到指针数组中
 	sgs[num_out++] = &hdr;
 
 	if (vbr->sg_table.nents) {
 		if (vbr->out_hdr.type & cpu_to_virtio32(vq->vdev, VIRTIO_BLK_T_OUT))
-			sgs[num_out++] = vbr->sg_table.sgl;
+			sgs[num_out++] = vbr->sg_table.sgl; // 将输出scatterlist添加到指针数组中
 		else
-			sgs[num_out + num_in++] = vbr->sg_table.sgl;
+			sgs[num_out + num_in++] = vbr->sg_table.sgl; // 将输入scatterlist添加到指针数组中
 	}
 
 	sg_init_one(&status, &vbr->status, sizeof(vbr->status));
 	sgs[num_out + num_in++] = &status;
 
+	//填充vring
 	return virtqueue_add_sgs(vq, sgs, num_out, num_in, vbr, GFP_ATOMIC);
 }
 
@@ -362,11 +366,13 @@ static blk_status_t virtio_queue_rq(struct blk_mq_hw_ctx *hctx,
 	blk_status_t status;
 	int err;
 
+	// 准备请求，例如设置请求的扇区号、设备地址等信息
 	status = virtblk_prep_rq(hctx, vblk, req, vbr);
 	if (unlikely(status))
 		return status;
 
 	spin_lock_irqsave(&vblk->vqs[qid].lock, flags);
+	//添加请求到虚拟队列
 	err = virtblk_add_req(vblk->vqs[qid].vq, vbr);
 	if (err) {
 		virtqueue_kick(vblk->vqs[qid].vq);
@@ -380,10 +386,12 @@ static blk_status_t virtio_queue_rq(struct blk_mq_hw_ctx *hctx,
 		return virtblk_fail_to_queue(req, err);
 	}
 
+	//准备kick后端
 	if (bd->last && virtqueue_kick_prepare(vblk->vqs[qid].vq))
 		notify = true;
 	spin_unlock_irqrestore(&vblk->vqs[qid].lock, flags);
 
+	//通知后端
 	if (notify)
 		virtqueue_notify(vblk->vqs[qid].vq);
 	return BLK_STS_OK;
@@ -606,18 +614,20 @@ static void virtblk_config_changed(struct virtio_device *vdev)
 	queue_work(virtblk_wq, &vblk->config_work);
 }
 
+//创建虚拟队列
 static int init_vq(struct virtio_blk *vblk)
 {
 	int err;
 	int i;
-	vq_callback_t **callbacks;
-	const char **names;
-	struct virtqueue **vqs;
-	unsigned short num_vqs;
-	unsigned int num_poll_vqs;
-	struct virtio_device *vdev = vblk->vdev;
+	vq_callback_t **callbacks; //回调函数数组
+	const char **names; //队列名称数组
+	struct virtqueue **vqs; //虚拟队列数组
+	unsigned short num_vqs; //虚拟队列数量
+	unsigned int num_poll_vqs; //轮询虚拟队列数量
+	struct virtio_device *vdev = vblk->vdev; 
 	struct irq_affinity desc = { 0, };
 
+	//读取配置中的虚拟队列数量
 	err = virtio_cread_feature(vdev, VIRTIO_BLK_F_MQ,
 				   struct virtio_blk_config, num_queues,
 				   &num_vqs);
@@ -629,6 +639,7 @@ static int init_vq(struct virtio_blk *vblk)
 		return -EINVAL;
 	}
 
+	//计算最终的虚拟队列数量
 	num_vqs = min_t(unsigned int,
 			min_not_zero(num_request_queues, nr_cpu_ids),
 			num_vqs);
@@ -639,11 +650,14 @@ static int init_vq(struct virtio_blk *vblk)
 	vblk->io_queues[HCTX_TYPE_READ] = 0;
 	vblk->io_queues[HCTX_TYPE_POLL] = num_poll_vqs;
 
+	// 设置不同类型虚拟队列的数量
 	dev_info(&vdev->dev, "%d/%d/%d default/read/poll queues\n",
 				vblk->io_queues[HCTX_TYPE_DEFAULT],
 				vblk->io_queues[HCTX_TYPE_READ],
 				vblk->io_queues[HCTX_TYPE_POLL]);
+		
 
+	//分配虚拟队列数组
 	vblk->vqs = kmalloc_array(num_vqs, sizeof(*vblk->vqs), GFP_KERNEL);
 	if (!vblk->vqs)
 		return -ENOMEM;
@@ -656,6 +670,7 @@ static int init_vq(struct virtio_blk *vblk)
 		goto out;
 	}
 
+	 // 初始化默认和轮询虚拟队列的回调函数和名称
 	for (i = 0; i < num_vqs - num_poll_vqs; i++) {
 		callbacks[i] = virtblk_done;
 		snprintf(vblk->vqs[i].name, VQ_NAME_LEN, "req.%d", i);
@@ -669,10 +684,12 @@ static int init_vq(struct virtio_blk *vblk)
 	}
 
 	/* Discover virtqueues and write information to configuration.  */
+	// 创建虚拟队列
 	err = virtio_find_vqs(vdev, num_vqs, vqs, callbacks, names, &desc);
 	if (err)
 		goto out;
 
+	// 初始化虚拟队列的锁和指针
 	for (i = 0; i < num_vqs; i++) {
 		spin_lock_init(&vblk->vqs[i].lock);
 		vblk->vqs[i].vq = vqs[i];
@@ -877,8 +894,8 @@ static int virtblk_poll(struct blk_mq_hw_ctx *hctx, struct io_comp_batch *iob)
 }
 
 static const struct blk_mq_ops virtio_mq_ops = {
-	.queue_rq	= virtio_queue_rq,
-	.queue_rqs	= virtio_queue_rqs,
+	.queue_rq	= virtio_queue_rq, //处理virtio-blk设备的io请求
+	.queue_rqs	= virtio_queue_rqs, 
 	.commit_rqs	= virtio_commit_rqs,
 	.complete	= virtblk_request_done,
 	.map_queues	= virtblk_map_queues,
@@ -925,7 +942,7 @@ static int virtblk_probe(struct virtio_device *vdev)
 	/* Prevent integer overflows and honor max vq size */
 	sg_elems = min_t(u32, sg_elems, VIRTIO_BLK_MAX_SG_ELEMS - 2);
 
-	vdev->priv = vblk = kmalloc(sizeof(*vblk), GFP_KERNEL);
+	vdev->priv = vblk = kmalloc(sizeof(*vblk), GFP_KERNEL); //给virtio-blk块设备分配虚拟队列
 	if (!vblk) {
 		err = -ENOMEM;
 		goto out_free_index;
@@ -937,7 +954,7 @@ static int virtblk_probe(struct virtio_device *vdev)
 
 	INIT_WORK(&vblk->config_work, virtblk_config_changed_work);
 
-	err = init_vq(vblk);
+	err = init_vq(vblk); //创建virtqueue
 	if (err)
 		goto out_free_vblk;
 
@@ -969,6 +986,7 @@ static int virtblk_probe(struct virtio_device *vdev)
 	if (err)
 		goto out_free_vq;
 
+	//给virtio-blk设备分配一个gendisk结构，代表一个物理磁盘设备
 	vblk->disk = blk_mq_alloc_disk(&vblk->tag_set, vblk);
 	if (IS_ERR(vblk->disk)) {
 		err = PTR_ERR(vblk->disk);
@@ -1263,9 +1281,9 @@ static struct virtio_driver virtio_blk = {
 	.driver.name			= KBUILD_MODNAME,
 	.driver.owner			= THIS_MODULE,
 	.id_table			= id_table,
-	.probe				= virtblk_probe,
-	.remove				= virtblk_remove,
-	.config_changed			= virtblk_config_changed,
+	.probe				= virtblk_probe, //设备探测并初始化设备函数
+	.remove				= virtblk_remove, //删除设备时调用
+	.config_changed			= virtblk_config_changed, //配置空间更改时调用
 #ifdef CONFIG_PM_SLEEP
 	.freeze				= virtblk_freeze,
 	.restore			= virtblk_restore,
@@ -1276,17 +1294,17 @@ static int __init virtio_blk_init(void)
 {
 	int error;
 
-	virtblk_wq = alloc_workqueue("virtio-blk", 0, 0);
+	virtblk_wq = alloc_workqueue("virtio-blk", 0, 0); //创建工作队列
 	if (!virtblk_wq)
 		return -ENOMEM;
 
-	major = register_blkdev(0, "virtblk");
+	major = register_blkdev(0, "virtblk"); //注册virtio-blk块设备
 	if (major < 0) {
 		error = major;
 		goto out_destroy_workqueue;
 	}
 
-	error = register_virtio_driver(&virtio_blk);
+	error = register_virtio_driver(&virtio_blk); //注册块设备对应的驱动到bus
 	if (error)
 		goto out_unregister_blkdev;
 	return 0;

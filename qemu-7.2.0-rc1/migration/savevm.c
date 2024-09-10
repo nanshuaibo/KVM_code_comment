@@ -198,9 +198,10 @@ typedef struct CompatEntry {
     int instance_id;
 } CompatEntry;
 
+//描述一个迁移模块
 typedef struct SaveStateEntry {
-    QTAILQ_ENTRY(SaveStateEntry) entry;
-    char idstr[256];
+    QTAILQ_ENTRY(SaveStateEntry) entry; //用于将SaveStateEntry结构体链接到队列中,QTAILQ_ENTRY宏是QEMU中用于定义队列条目的宏。
+    char idstr[256]; //迁移模块的名字
     uint32_t instance_id;
     int alias_id;
     int version_id;
@@ -209,8 +210,8 @@ typedef struct SaveStateEntry {
     int section_id;
     /* section id read from the stream */
     int load_section_id;
-    const SaveVMHandlers *ops;
-    const VMStateDescription *vmsd;
+    const SaveVMHandlers *ops; //该结构体包含一系列回调函数，用于处理虚拟机的保存和恢复状态
+    const VMStateDescription *vmsd; //保存了迁移过程中设备的状态信息
     void *opaque;
     CompatEntry *compat;
     int is_ram;
@@ -871,7 +872,7 @@ static int vmstate_load(QEMUFile *f, SaveStateEntry *se)
 {
     trace_vmstate_load(se->idstr, se->vmsd ? se->vmsd->name : "(old)");
     if (!se->vmsd) {         /* Old style */
-        return se->ops->load_state(f, se->opaque, se->load_version_id);
+        return se->ops->load_state(f, se->opaque, se->load_version_id); //调用ram_load
     }
     return vmstate_load_state(f, se->vmsd, se->opaque, se->load_version_id);
 }
@@ -1139,7 +1140,7 @@ void qemu_savevm_state_header(QEMUFile *f)
 {
     trace_savevm_state_header();
     qemu_put_be32(f, QEMU_VM_FILE_MAGIC);
-    qemu_put_be32(f, QEMU_VM_FILE_VERSION);
+    qemu_put_be32(f, QEMU_VM_FILE_VERSION); //在buffer的头部加入了MAGIC和VERSION字段
 
     if (migrate_get_current()->send_configuration) {
         qemu_put_byte(f, QEMU_VM_CONFIGURATION);
@@ -1161,6 +1162,7 @@ bool qemu_savevm_state_guest_unplug_pending(void)
     return false;
 }
 
+//此函数会调用到之前设置的SaveVMHandlers回调函数里
 void qemu_savevm_state_setup(QEMUFile *f)
 {
     SaveStateEntry *se;
@@ -1168,6 +1170,8 @@ void qemu_savevm_state_setup(QEMUFile *f)
     int ret;
 
     trace_savevm_state_setup();
+    //遍历savevm_state.handlers上的所有entry，分别去调用set_params, 
+    //save_live_setup回调函数。对于ram热迁移模块，会调用到ram_save_setup函数里
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (!se->ops || !se->ops->save_setup) {
             continue;
@@ -1258,7 +1262,7 @@ int qemu_savevm_state_iterate(QEMUFile *f, bool postcopy)
 
         save_section_header(f, se, QEMU_VM_SECTION_PART);
 
-        ret = se->ops->save_live_iterate(f, se->opaque);
+        ret = se->ops->save_live_iterate(f, se->opaque); //寻找脏页并发送 
         trace_savevm_section_end(se->idstr, se->section_id, ret);
         save_section_footer(f, se);
 
@@ -1446,7 +1450,7 @@ int qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only,
     cpu_synchronize_all_states();
 
     if (!in_postcopy || iterable_only) {
-        ret = qemu_savevm_state_complete_precopy_iterable(f, in_postcopy);
+        ret = qemu_savevm_state_complete_precopy_iterable(f, in_postcopy); //完成最后的数据传输
         if (ret) {
             return ret;
         }
@@ -2520,7 +2524,7 @@ static int qemu_loadvm_state_setup(QEMUFile *f)
             }
         }
 
-        ret = se->ops->load_setup(f, se->opaque);
+        ret = se->ops->load_setup(f, se->opaque);//设置RAM以准备接收迁移数据
         if (ret < 0) {
             qemu_file_set_error(f, ret);
             error_report("Load state of device %s failed", se->idstr);
@@ -2627,16 +2631,16 @@ retry:
         }
 
         trace_qemu_loadvm_state_section(section_type);
-        switch (section_type) {
-        case QEMU_VM_SECTION_START:
-        case QEMU_VM_SECTION_FULL:
+        switch (section_type) { //根据不同阶段插入的不同section来处理
+        case QEMU_VM_SECTION_START: //源端开始迁移
+        case QEMU_VM_SECTION_FULL: //设备同步阶段
             ret = qemu_loadvm_section_start_full(f, mis);
             if (ret < 0) {
                 goto out;
             }
             break;
-        case QEMU_VM_SECTION_PART:
-        case QEMU_VM_SECTION_END:
+        case QEMU_VM_SECTION_PART://迭代阶段
+        case QEMU_VM_SECTION_END: //迁移完成阶段
             ret = qemu_loadvm_section_part_end(f, mis);
             if (ret < 0) {
                 goto out;
@@ -2693,12 +2697,12 @@ int qemu_loadvm_state(QEMUFile *f)
     Error *local_err = NULL;
     int ret;
 
-    if (qemu_savevm_state_blocked(&local_err)) {
+    if (qemu_savevm_state_blocked(&local_err)) { //是否有不可迁移的设备
         error_report_err(local_err);
         return -EINVAL;
     }
 
-    ret = qemu_loadvm_state_header(f);
+    ret = qemu_loadvm_state_header(f); //加载虚拟机状态头部信息
     if (ret) {
         return ret;
     }
@@ -2709,7 +2713,7 @@ int qemu_loadvm_state(QEMUFile *f)
 
     cpu_synchronize_all_pre_loadvm();
 
-    ret = qemu_loadvm_state_main(f, mis);
+    ret = qemu_loadvm_state_main(f, mis); //加载虚拟机
     qemu_event_set(&mis->main_thread_load_event);
 
     trace_qemu_loadvm_state_post_main(ret);

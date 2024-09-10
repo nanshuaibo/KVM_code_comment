@@ -668,11 +668,11 @@ int vm_stop(RunState state)
          * FIXME: should not return to device code in case
          * vm_stop() has been requested.
          */
-        cpu_stop_current();
+        cpu_stop_current(); //如果当前的qemu进程就在当前CPU上运行，则做cpuexit的操作，让出CPU
         return 0;
     }
 
-    return do_vm_stop(state, true);
+    return do_vm_stop(state, true); //如果在qemu进程在别的CPU上运行，则发送tick，让CPU陷入到KVM内核态
 }
 
 /**
@@ -696,7 +696,7 @@ int vm_prepare_start(bool step_pending)
      */
     if (runstate_is_running()) {
         qapi_event_send_stop();
-        qapi_event_send_resume();
+        qapi_event_send_resume(); //通知libvirt启动虚拟机
         return -1;
     }
 
@@ -717,6 +717,7 @@ int vm_prepare_start(bool step_pending)
     return 0;
 }
 
+//启动虚拟机
 void vm_start(void)
 {
     if (!vm_prepare_start(false)) {
@@ -728,13 +729,13 @@ void vm_start(void)
    current state is forgotten forever */
 int vm_stop_force_state(RunState state)
 {
-    if (runstate_is_running()) {
+    if (runstate_is_running()) { //vm正在运行
         return vm_stop(state);
     } else {
         int ret;
         runstate_set(state);
 
-        bdrv_drain_all();
+        bdrv_drain_all(); //vm在不在运行
         /* Make sure to return an error if the flush in a previous vm_stop()
          * failed. */
         ret = bdrv_flush_all();

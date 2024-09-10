@@ -464,11 +464,11 @@ struct blk_mq_queue_map {
  * @HCTX_MAX_TYPES:	Number of types of hctx.
  */
 enum hctx_type {
-	HCTX_TYPE_DEFAULT,
-	HCTX_TYPE_READ,
-	HCTX_TYPE_POLL,
+    HCTX_TYPE_DEFAULT, // 默认类型，用于所有未被其他类型涵盖的I/O操作
+    HCTX_TYPE_READ,    // 仅用于读操作的I/O
+    HCTX_TYPE_POLL,    // 用于任何类型的轮询I/O操作
 
-	HCTX_MAX_TYPES,
+    HCTX_MAX_TYPES,    // 枚举类型的数量，用于表示有多少种hctx类型
 };
 
 /**

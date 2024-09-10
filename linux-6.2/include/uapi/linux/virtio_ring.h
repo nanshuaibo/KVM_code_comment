@@ -105,14 +105,20 @@
  *        descriptors via this, too.
  */
 struct vring_desc {
-	__virtio64 addr;
-	__virtio32 len;
-	__virtio16 flags;
-	__virtio16 next;
+	__virtio64 addr; //guest物理地址gpa
+	__virtio32 len; //buffer的长度
+
+	__virtio16 flags; 
+	//flags可能取值：
+	//VRING_DESC_F_NEXT：用于表明当前 buffer 的下一个域是否有效，也间接表明当前 buffer 是否是 buffers list 的最后一个。
+	//VRING_DESC_F_WRITE：当前 buffer 是 read-only 还是 write-only。
+	//VRING_DESC_F_INDIRECT：表明这个 buffer 中包含一个 buffer 描述符的 list
+
+	__virtio16 next; //所有的 buffers 通过 next 串联起来组成 descriptor table
 };
 
 struct vring_avail {
-	__virtio16 flags;
+	__virtio16 flags; 
 	__virtio16 idx;
 	__virtio16 ring[];
 };
@@ -120,14 +126,15 @@ struct vring_avail {
 /* u32 is used here for ids for padding reasons. */
 struct vring_used_elem {
 	/* Index of start of used descriptor chain. */
-	__virtio32 id;
+	__virtio32 id; //id 指向 descriptor chain 的入口
 	/* Total length of the descriptor chain which was used (written to) */
-	__virtio32 len;
+	__virtio32 len; //写入到 buffer中的字节数
 };
 
 typedef struct vring_used_elem __attribute__((aligned(VRING_USED_ALIGN_SIZE)))
 	vring_used_elem_t;
 
+//指向 device(host)使用过的 buffers
 struct vring_used {
 	__virtio16 flags;
 	__virtio16 idx;
@@ -156,13 +163,13 @@ typedef struct vring_used __attribute__((aligned(VRING_USED_ALIGN_SIZE)))
 	vring_used_t;
 
 struct vring {
-	unsigned int num;
+	unsigned int num; //也是virtqueue->num_free的最大值，即vring大小，三个表能存的个数，128
 
-	vring_desc_t *desc;
+	vring_desc_t *desc; //描述符表，里面存放着前端驱动发送给后端设备的数据描述
 
-	vring_avail_t *avail;
+	vring_avail_t *avail; //指向这段数据
 
-	vring_used_t *used;
+	vring_used_t *used; //后端更新，通知前端已经处理到哪里
 };
 
 #ifndef VIRTIO_RING_NO_LEGACY

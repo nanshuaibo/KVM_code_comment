@@ -3,21 +3,31 @@
 #define _LINUX_COMPACTION_H
 
 /*
- * Determines how hard direct compaction should try to succeed.
- * Lower value means higher priority, analogically to reclaim priority.
+ * 确定直接压缩应该尝试成功的难易程度。
+ * 值越低意味着优先级越高，类似于回收优先级。
  */
+// 定义一个名为compact_priority的枚举类型，用于表示内存压缩的优先级
 enum compact_priority {
+	// 同步全量压缩优先级
 	COMPACT_PRIO_SYNC_FULL,
+	// 最小压缩优先级，与COMPACT_PRIO_SYNC_FULL相同
 	MIN_COMPACT_PRIORITY = COMPACT_PRIO_SYNC_FULL,
+	// 同步轻量压缩优先级
 	COMPACT_PRIO_SYNC_LIGHT,
+	// 最小成本压缩优先级，与COMPACT_PRIO_SYNC_LIGHT相同
 	MIN_COMPACT_COSTLY_PRIORITY = COMPACT_PRIO_SYNC_LIGHT,
+	// 默认压缩优先级，与COMPACT_PRIO_SYNC_LIGHT相同
 	DEF_COMPACT_PRIORITY = COMPACT_PRIO_SYNC_LIGHT,
+	// 异步压缩优先级
 	COMPACT_PRIO_ASYNC,
+	// 初始化压缩优先级，与COMPACT_PRIO_ASYNC相同
 	INIT_COMPACT_PRIORITY = COMPACT_PRIO_ASYNC
 };
 
+
 /* Return values for compact_zone() and try_to_compact_pages() */
 /* When adding new states, please adjust include/trace/events/compaction.h */
+//表示内存压缩的结果
 enum compact_result {
 	/* For more detailed tracepoint output - internal to compaction */
 	COMPACT_NOT_SUITABLE_ZONE,

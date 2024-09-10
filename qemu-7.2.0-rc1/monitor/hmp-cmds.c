@@ -1128,13 +1128,20 @@ void hmp_migrate_continue(Monitor *mon, const QDict *qdict)
     hmp_handle_error(mon, err);
 }
 
+//   mon: Monitor指针，用于与QEMU交互
+//   qdict: QDict指针，包含从HMP接收到的JSON格式的迁移请求数据
 void hmp_migrate_incoming(Monitor *mon, const QDict *qdict)
 {
+    // 初始化错误指针为NULL
     Error *err = NULL;
+
+    // 从QDict中获取迁移请求的URI
     const char *uri = qdict_get_str(qdict, "uri");
 
+    // 调用qmp_migrate_incoming函数处理迁移请求，并传递错误指针以接收可能的错误信息
     qmp_migrate_incoming(uri, &err);
 
+    // 根据qmp_migrate_incoming函数的执行结果，处理可能出现的错误
     hmp_handle_error(mon, err);
 }
 

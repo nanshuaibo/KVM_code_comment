@@ -353,7 +353,7 @@ int register_virtio_driver(struct virtio_driver *driver)
 {
 	/* Catch this early. */
 	BUG_ON(driver->feature_table_size && !driver->feature_table);
-	driver->driver.bus = &virtio_bus;
+	driver->driver.bus = &virtio_bus; //将virtio-blk块设备驱动注册到virtio-bus
 	return driver_register(&driver->driver);
 }
 EXPORT_SYMBOL_GPL(register_virtio_driver);

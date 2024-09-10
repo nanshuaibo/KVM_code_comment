@@ -573,7 +573,7 @@ static __always_inline __alloc_size(1) void *kmalloc(size_t size, gfp_t flags)
 	if (__builtin_constant_p(size) && size) {
 		unsigned int index;
 
-		if (size > KMALLOC_MAX_CACHE_SIZE)
+		if (size > KMALLOC_MAX_CACHE_SIZE) //大于4k,使用buddy分配
 			return kmalloc_large(size, flags);
 
 		index = kmalloc_index(size);
@@ -589,7 +589,7 @@ static __always_inline __alloc_size(1) void *kmalloc(size_t size, gfp_t flags)
 	if (__builtin_constant_p(size) && size > KMALLOC_MAX_CACHE_SIZE)
 		return kmalloc_large(size, flags);
 
-	return __kmalloc(size, flags);
+	return __kmalloc(size, flags); // __kmalloc->__do_kmalloc_node->kmalloc_slab
 }
 #endif
 
@@ -705,6 +705,7 @@ static inline __alloc_size(1, 2) void *kcalloc_node(size_t n, size_t size, gfp_t
 /*
  * Shortcuts
  */
+// 分配一个内存缓存对象
 static inline void *kmem_cache_zalloc(struct kmem_cache *k, gfp_t flags)
 {
 	return kmem_cache_alloc(k, flags | __GFP_ZERO);

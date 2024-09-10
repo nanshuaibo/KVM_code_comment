@@ -61,16 +61,29 @@
 #                               (since 7.1)
 # Since: 0.14
 ##
-{ 'struct': 'MigrationStats',
-  'data': {'transferred': 'int', 'remaining': 'int', 'total': 'int' ,
-           'duplicate': 'int', 'skipped': 'int', 'normal': 'int',
-           'normal-bytes': 'int', 'dirty-pages-rate' : 'int',
-           'mbps' : 'number', 'dirty-sync-count' : 'int',
-           'postcopy-requests' : 'int', 'page-size' : 'int',
-           'multifd-bytes' : 'uint64', 'pages-per-second' : 'uint64',
-           'precopy-bytes' : 'uint64', 'downtime-bytes' : 'uint64',
-           'postcopy-bytes' : 'uint64',
-           'dirty-sync-missed-zero-copy' : 'uint64' } }
+{
+  'struct': 'MigrationStats',
+  'data': {
+      'transferred': 'int',           // 已迁移的数据量
+      'remaining': 'int',             // 剩余待迁移的数据量
+      'total': 'int',                 // 总数据量
+      'duplicate': 'int',             // 重复数据量
+      'skipped': 'int',               // 跳过数据量
+      'normal': 'int',                // 正常数据量
+      'normal-bytes': 'int',          // 正常数据量（以字节为单位）
+      'dirty-pages-rate': 'int',      // 脏页速率
+      'mbps': 'number',               // 迁移速度（以兆比特每秒为单位）
+      'dirty-sync-count': 'int',      // 脏页同步次数
+      'postcopy-requests': 'int',     // 后复制请求数
+      'page-size': 'int',             // 页面大小
+      'multifd-bytes': 'uint64',      // 多文件描述符传输的字节数
+      'pages-per-second': 'uint64',   // 每秒页面数
+      'precopy-bytes': 'uint64',      // 预复制阶段传输的字节数
+      'downtime-bytes': 'uint64',     // 停机时间传输的字节数
+      'postcopy-bytes': 'uint64',     // 后复制阶段传输的字节数
+      'dirty-sync-missed-zero-copy': 'uint64' // 零拷贝缺失的脏页同步数
+  }
+}
 
 ##
 # @XBZRLECacheStats:
@@ -93,10 +106,18 @@
 #
 # Since: 1.2
 ##
-{ 'struct': 'XBZRLECacheStats',
-  'data': {'cache-size': 'size', 'bytes': 'int', 'pages': 'int',
-           'cache-miss': 'int', 'cache-miss-rate': 'number',
-           'encoding-rate': 'number', 'overflow': 'int' } }
+{
+  'struct': 'XBZRLECacheStats',
+  'data': {
+      'cache-size': 'size',           // 缓存大小
+      'bytes': 'int',                 // 缓存的字节数
+      'pages': 'int',                 // 缓存的页面数
+      'cache-miss': 'int',            // 缓存未命中次数
+      'cache-miss-rate': 'number',    // 缓存未命中率
+      'encoding-rate': 'number',      // 编码速率
+      'overflow': 'int'               // 溢出次数
+  }
+}
 
 ##
 # @CompressionStats:
@@ -244,22 +265,27 @@
 #
 # Since: 0.14
 ##
-{ 'struct': 'MigrationInfo',
-  'data': {'*status': 'MigrationStatus', '*ram': 'MigrationStats',
-           '*disk': 'MigrationStats',
-           '*vfio': 'VfioStats',
-           '*xbzrle-cache': 'XBZRLECacheStats',
-           '*total-time': 'int',
-           '*expected-downtime': 'int',
-           '*downtime': 'int',
-           '*setup-time': 'int',
-           '*cpu-throttle-percentage': 'int',
-           '*error-desc': 'str',
-           '*blocked-reasons': ['str'],
-           '*postcopy-blocktime' : 'uint32',
-           '*postcopy-vcpu-blocktime': ['uint32'],
-           '*compression': 'CompressionStats',
-           '*socket-address': ['SocketAddress'] } }
+{
+  'struct': 'MigrationInfo',
+  'data': {
+    '*status': 'MigrationStatus',            // 迁移状态
+    '*ram': 'MigrationStats',               // RAM 迁移统计信息
+    '*disk': 'MigrationStats',              // 磁盘迁移统计信息
+    '*vfio': 'VfioStats',                   // VFIO 设备迁移统计信息
+    '*xbzrle-cache': 'XBZRLECacheStats',    // XBZRLE 缓存统计信息
+    '*total-time': 'int',                 // 整个迁移过程所用的总时间
+    '*expected-downtime': 'int',           // 预期的停机时间
+    '*downtime': 'int',                   // 实际停机时间
+    '*setup-time': 'int',                 // 迁移准备阶段所用时间
+    '*cpu-throttle-percentage': 'int',      // CPU 限流百分比
+    '*error-desc': 'str',                 // 迁移过程中出现的错误描述
+    '*blocked-reasons': ['str'],          // 导致迁移阻塞的原因列表
+    '*postcopy-blocktime': 'uint32',       // Postcopy 阶段的阻塞时间
+    '*postcopy-vcpu-blocktime': ['uint32'], // 每个 VCPU 在 Postcopy 阶段的阻塞时间
+    '*compression': 'CompressionStats',    // 压缩统计信息
+    '*socket-address': ['SocketAddress']  // 迁移过程中使用的套接字地址列表
+  }
+}
 
 ##
 # @query-migrate:

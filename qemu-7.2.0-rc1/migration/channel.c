@@ -52,12 +52,12 @@ void migration_channel_process_incoming(QIOChannel *ioc)
 
 
 /**
- * @migration_channel_connect - Create new outgoing migration channel
+ * @migration_channel_connect - 创建新的外出迁移通道
  *
- * @s: Current migration state
- * @ioc: Channel to which we are connecting
- * @hostname: Where we want to connect
- * @error: Error indicating failure to connect, free'd here
+ * @s: 当前的迁移状态
+ * @ioc: 我们要连接到的通道
+ * @hostname: 我们想要连接的目标主机名
+ * @error: 表示连接失败的错误，在此处释放
  */
 void migration_channel_connect(MigrationState *s,
                                QIOChannel *ioc,
@@ -68,7 +68,9 @@ void migration_channel_connect(MigrationState *s,
         ioc, object_get_typename(OBJECT(ioc)), hostname, error);
 
     if (!error) {
+        // // 如果需要升级到 TLS 连接
         if (migrate_channel_requires_tls_upgrade(ioc)) {
+            // 尝试使用 TLS 连接迁移通道
             migration_tls_channel_connect(s, ioc, hostname, &error);
 
             if (!error) {
@@ -80,15 +82,19 @@ void migration_channel_connect(MigrationState *s,
                 return;
             }
         } else {
+             // 否则，创建一个新的输出文件流
             QEMUFile *f = qemu_file_new_output(ioc);
 
             migration_ioc_register_yank(ioc);
 
+            // 设置迁移状态中的输出文件
             qemu_mutex_lock(&s->qemu_file_lock);
             s->to_dst_file = f;
             qemu_mutex_unlock(&s->qemu_file_lock);
         }
     }
+
+    //当tcp链接成功后，最终会调用到migrate_fd_connect函数中。其中to_dst_file代表的就是传输的文件信息结构体，使用的QEMUFile结构来表示。
     migrate_fd_connect(s, error);
     error_free(error);
 }

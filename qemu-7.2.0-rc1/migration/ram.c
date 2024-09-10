@@ -3073,8 +3073,8 @@ static void ram_init_bitmaps(RAMState *rs)
         ram_list_init_bitmaps();
         /* We don't use dirty log with background snapshots */
         if (!migrate_background_snapshot()) {
-            memory_global_dirty_log_start(GLOBAL_DIRTY_MIGRATION);
-            migration_bitmap_sync_precopy(rs);
+            memory_global_dirty_log_start(GLOBAL_DIRTY_MIGRATION); //主要是启动脏页记录，可以理解为从这里开始，脏页已经开始记录了
+            migration_bitmap_sync_precopy(rs); //同步脏页
         }
     }
     qemu_mutex_unlock_ramlist();
@@ -3192,12 +3192,12 @@ void qemu_guest_free_page_hint(void *addr, size_t len)
  */
 
 /**
- * ram_save_setup: Setup RAM for migration
+ * ram_save_setup: 为迁移设置 RAM
  *
- * Returns zero to indicate success and negative for error
+ * 返回零表示成功，负数表示错误
  *
- * @f: QEMUFile where to send the data
- * @opaque: RAMState pointer
+ * @f: 发送数据的 QEMUFile
+ * @opaque: RAMState 指针
  */
 static int ram_save_setup(QEMUFile *f, void *opaque)
 {
@@ -3205,45 +3205,56 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
     RAMBlock *block;
     int ret;
 
+    // 如果压缩线程保存设置失败，则返回错误
     if (compress_threads_save_setup()) {
         return -1;
     }
 
-    /* migration has already setup the bitmap, reuse it. */
     if (!migration_in_colo_state()) {
-        if (ram_init_all(rsp) != 0) {
+        if (ram_init_all(rsp) != 0) {   //ram_init_all->ram_init_bitmaps->memory_global_dirty_log_start 启动脏页记录
+                                        //ram_init_all->ram_init_bitmaps->migration_bitmap_sync_precopy 同步KVM和QEMU的脏页，更新脏页
             compress_threads_save_cleanup();
             return -1;
         }
     }
     (*rsp)->f = f;
 
+    // 在 RCU 读锁保护下执行关键操作
     WITH_RCU_READ_LOCK_GUARD() {
+        // 将 RAM 总大小和 RAM_SAVE_FLAG_MEM_SIZE 标志发送到目标
         qemu_put_be64(f, ram_bytes_total_common(true) | RAM_SAVE_FLAG_MEM_SIZE);
 
+        // 遍历所有可迁移的 RAM 块
         RAMBLOCK_FOREACH_MIGRATABLE(block) {
+            // 发送 RAM 块的 ID 字符串长度和内容
             qemu_put_byte(f, strlen(block->idstr));
             qemu_put_buffer(f, (uint8_t *)block->idstr, strlen(block->idstr));
+            // 发送 RAM 块的使用长度
             qemu_put_be64(f, block->used_length);
-            if (migrate_postcopy_ram() && block->page_size !=
-                                          qemu_host_page_size) {
+            // 如果启用了 postcopy 迁移策略且 RAM 块的页面大小与主机页面大小不同，则发送页面大小
+            if (migrate_postcopy_ram() && block->page_size != qemu_host_page_size) {
                 qemu_put_be64(f, block->page_size);
             }
+            // 如果启用了忽略共享内存的迁移策略，则发送 RAM 块的内存地址
             if (migrate_ignore_shared()) {
                 qemu_put_be64(f, block->mr->addr);
             }
         }
     }
 
+    // 在迭代之前和之后执行 RAM 控制操作
     ram_control_before_iterate(f, RAM_CONTROL_SETUP);
     ram_control_after_iterate(f, RAM_CONTROL_SETUP);
 
-    ret =  multifd_send_sync_main(f);
+    // 发送多文件描述符同步主信号
+    ret = multifd_send_sync_main(f);
     if (ret < 0) {
         return ret;
     }
 
+    // 发送 RAM_SAVE_FLAG_EOS 标志以表示设置已完成
     qemu_put_be64(f, RAM_SAVE_FLAG_EOS);
+    // 刷新输出缓冲区
     qemu_fflush(f);
 
     return 0;
@@ -3293,7 +3304,7 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
 
         t0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
         i = 0;
-        while ((ret = qemu_file_rate_limit(f)) == 0 ||
+        while ((ret = qemu_file_rate_limit(f)) == 0 || //发送的字节数没有超出limit的值
                postcopy_has_request(rs)) {
             int pages;
 
@@ -3301,9 +3312,10 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
                 break;
             }
 
-            pages = ram_find_and_save_block(rs);
+            pages = ram_find_and_save_block(rs); //寻找脏页，然后发送出去，返回值表示发送出去的脏页
+
             /* no more pages to sent */
-            if (pages == 0) {
+            if (pages == 0) { //寻找脏页，然后发送出去，返回值表示发送出去的脏页
                 done = 1;
                 break;
             }
@@ -3329,10 +3341,10 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
              * qemu_clock_get_ns() is a bit expensive, so we only check each
              * some iterations
              */
-            if ((i & 63) == 0) {
+            if ((i & 63) == 0) { //当while循环执行每隔64次做一次判断
                 uint64_t t1 = (qemu_clock_get_ns(QEMU_CLOCK_REALTIME) - t0) /
                               1000000;
-                if (t1 > MAX_WAIT) {
+                if (t1 > MAX_WAIT) {//当循环的时间已经超过MAX_WAIT等值也就是50ms的时候，也退出while循环
                     trace_ram_save_iterate_big_wait(t1, i);
                     break;
                 }
@@ -3391,7 +3403,7 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 
     WITH_RCU_READ_LOCK_GUARD() {
         if (!migration_in_postcopy()) {
-            migration_bitmap_sync_precopy(rs);
+            migration_bitmap_sync_precopy(rs); //同步kvm侧剩余脏页
         }
 
         ram_control_before_iterate(f, RAM_CONTROL_FINISH);
@@ -3402,7 +3414,7 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
         while (true) {
             int pages;
 
-            pages = ram_find_and_save_block(rs);
+            pages = ram_find_and_save_block(rs);//把所有的脏页传输到目的端
             /* no more blocks to sent */
             if (pages == 0) {
                 break;
@@ -3441,12 +3453,12 @@ static void ram_save_pending(QEMUFile *f, void *opaque, uint64_t max_size,
 {
     RAMState **temp = opaque;
     RAMState *rs = *temp;
-    uint64_t remaining_size;
+    uint64_t remaining_size; //剩余还没发送的数据量
 
     remaining_size = rs->migration_dirty_pages * TARGET_PAGE_SIZE;
 
     if (!migration_in_postcopy() &&
-        remaining_size < max_size) {
+        remaining_size < max_size) { //max_size代表的是在带宽和最大宕机时间允许下，传输的最大数据量
         qemu_mutex_lock_iothread();
         WITH_RCU_READ_LOCK_GUARD() {
             migration_bitmap_sync_precopy(rs);
@@ -3498,50 +3510,63 @@ static int load_xbzrle(QEMUFile *f, ram_addr_t addr, void *host)
 }
 
 /**
- * ram_block_from_stream: read a RAMBlock id from the migration stream
+ * ram_block_from_stream: 从迁移流中读取一个RAMBlock id
  *
- * Must be called from within a rcu critical section.
+ * 必须从rcu临界区内部调用。
  *
- * Returns a pointer from within the RCU-protected ram_list.
+ * 返回一个指向RCU保护ram_list内部的指针。
  *
- * @mis: the migration incoming state pointer
- * @f: QEMUFile where to read the data from
- * @flags: Page flags (mostly to see if it's a continuation of previous block)
- * @channel: the channel we're using
+ * @mis: 迁移传入状态指针
+ * @f: 从中读取数据的QEMUFile
+ * @flags: 页面标志（主要用于查看是否是上一个块的延续）
+ * @channel: 我们正在使用的通道
  */
 static inline RAMBlock *ram_block_from_stream(MigrationIncomingState *mis,
-                                              QEMUFile *f, int flags,
-                                              int channel)
+        QEMUFile *f, int flags,
+        int channel)
 {
+    // 获取mis->last_recv_block[channel]指向的RAMBlock
     RAMBlock *block = mis->last_recv_block[channel];
+    // 定义一个长度为256的字符数组id，用于存储从迁移流中读取的RAMBlock id
     char id[256];
-    uint8_t len;
+    // 定义一个无符号8位整型变量len，用于存储id的长度
 
+    // 如果flags包含RAM_SAVE_FLAG_CONTINUE标志，表示这是上一个块的延续
     if (flags & RAM_SAVE_FLAG_CONTINUE) {
+        // 如果没有block，说明迁移流有问题，报告错误并返回NULL
         if (!block) {
             error_report("Ack, bad migration stream!");
             return NULL;
         }
+        // 返回block
         return block;
     }
 
+    // 从QEMUFile中读取id的长度
     len = qemu_get_byte(f);
+    // 从QEMUFile中读取id，并存入id数组
     qemu_get_buffer(f, (uint8_t *)id, len);
+    // 在id末尾添加字符串结束符'\0'
     id[len] = 0;
 
+    // 根据id查找对应的RAMBlock
     block = qemu_ram_block_by_name(id);
+    // 如果找不到block，报告错误并返回NULL
     if (!block) {
         error_report("Can't find block %s", id);
         return NULL;
     }
 
+    // 如果block被忽略，报告错误并返回NULL
     if (ramblock_is_ignored(block)) {
         error_report("block %s should not be migrated !", id);
         return NULL;
     }
 
+    // 将找到的block赋值给mis->last_recv_block[channel]
     mis->last_recv_block[channel] = block;
 
+    // 返回block
     return block;
 }
 
@@ -3896,8 +3921,7 @@ void colo_release_ram_cache(void)
 }
 
 /**
- * ram_load_setup: Setup RAM for migration incoming side
- *
+ * ram_load_setup: 设置RAM以准备接收迁移数
  * Returns zero to indicate success and negative for error
  *
  * @f: QEMUFile where to receive the data
@@ -3905,6 +3929,7 @@ void colo_release_ram_cache(void)
  */
 static int ram_load_setup(QEMUFile *f, void *opaque)
 {
+    //加载压缩线程
     if (compress_threads_load_setup(f)) {
         return -1;
     }
@@ -4596,16 +4621,17 @@ void postcopy_preempt_shutdown_file(MigrationState *s)
     qemu_fflush(s->postcopy_qemufile_src);
 }
 
+//ram相关的回调处理函数
 static SaveVMHandlers savevm_ram_handlers = {
-    .save_setup = ram_save_setup,
-    .save_live_iterate = ram_save_iterate,
+    .save_setup = ram_save_setup, 
+    .save_live_iterate = ram_save_iterate, //save_setup, save_live_iterate会在热迁移阶段中使用
     .save_live_complete_postcopy = ram_save_complete,
     .save_live_complete_precopy = ram_save_complete,
     .has_postcopy = ram_has_postcopy,
     .save_live_pending = ram_save_pending,
-    .load_state = ram_load,
+    .load_state = ram_load, //接受加载虚拟机内存，设备状态等
     .save_cleanup = ram_save_cleanup,
-    .load_setup = ram_load_setup,
+    .load_setup = ram_load_setup,//设置RAM以准备接收迁移数据
     .load_cleanup = ram_load_cleanup,
     .resume_prepare = ram_resume_prepare,
 };
@@ -4672,6 +4698,7 @@ static RAMBlockNotifier ram_mig_ram_notifier = {
 void ram_mig_init(void)
 {
     qemu_mutex_init(&XBZRLE.lock);
+    //ram相关的迁移初始化
     register_savevm_live("ram", 0, 4, &savevm_ram_handlers, &ram_state);
     ram_block_notifier_add(&ram_mig_ram_notifier);
 }

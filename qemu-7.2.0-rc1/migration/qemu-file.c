@@ -35,35 +35,53 @@
 #define MAX_IOV_SIZE MIN_CONST(IOV_MAX, 64)
 
 struct QEMUFile {
+    // 指向 QEMUFileHooks 结构的指针，用于定义文件操作的行为
     const QEMUFileHooks *hooks;
+    
+    // 指向 QIOChannel 结构的指针，表示底层 I/O 通道
     QIOChannel *ioc;
+    
+    // 指示文件是否可写
     bool is_writable;
 
     /*
-     * Maximum amount of data in bytes to transfer during one
-     * rate limiting time window
+     * 在一个速率限制时间窗口内传输的最大数据量（以字节为单位）
      */
     int64_t rate_limit_max;
+    
     /*
-     * Total amount of data in bytes queued for transfer
-     * during this rate limiting time window
+     * 在这个速率限制时间窗口内排队等待传输的总数据量（以字节为单位）
      */
     int64_t rate_limit_used;
 
-    /* The sum of bytes transferred on the wire */
+    /* 通过网络传输的总字节数 */
     int64_t total_transferred;
 
+    // 当前缓冲区索引
     int buf_index;
-    int buf_size; /* 0 when writing */
+    
+    // 缓冲区大小，当写入时为 0,读的时候代表buffer大小
+    int buf_size;
+    
+    // 数据缓冲区
     uint8_t buf[IO_BUF_SIZE];
 
+    // 指示哪些缓冲区可以释放的位图
     DECLARE_BITMAP(may_free, MAX_IOV_SIZE);
+    
+    // 用于高效 I/O 操作的 iovec 数组
     struct iovec iov[MAX_IOV_SIZE];
+    
+    // iovec 数组中的元素数量
     unsigned int iovcnt;
 
+    // 上一次操作的错误代码
     int last_error;
+    
+    // 用于存储上一次操作的错误对象的指针
     Error *last_error_obj;
-    /* has the file has been shutdown */
+    
+    // 指示文件是否已经关闭
     bool shutdown;
 };
 

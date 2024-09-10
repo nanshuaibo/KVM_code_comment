@@ -1091,6 +1091,7 @@ static int __unmap_and_move(struct folio *src, struct folio *dst,
 		goto out_unlock;
 
 	if (unlikely(!is_lru)) {
+		// 将可移动内存页的数据复制到空闲内存页中
 		rc = move_to_new_folio(dst, src, mode);
 		goto out_unlock_both;
 	}
@@ -1187,6 +1188,7 @@ static int unmap_and_move(new_page_t get_new_page,
 		goto out;
 	}
 
+	//找到一个空闲内存页面
 	newpage = get_new_page(&src->page, private);
 	if (!newpage)
 		return -ENOMEM;
@@ -1452,12 +1454,12 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 	trace_mm_migrate_pages_start(mode, reason);
 
 split_folio_migration:
+	//  遍历可移动内存页列表
 	for (pass = 0; pass < 10 && (retry || large_retry); pass++) {
 		retry = 0;
 		large_retry = 0;
 		thp_retry = 0;
 		nr_retry_pages = 0;
-
 		list_for_each_entry_safe(folio, folio2, from, lru) {
 			/*
 			 * Large folio statistics is based on the source large
@@ -1476,6 +1478,7 @@ split_folio_migration:
 						reason,
 						&ret_folios);
 			else
+				// 将可移动内存页迁移到空闲内存页中
 				rc = unmap_and_move(get_new_page, put_new_page,
 						private, folio, pass > 2, mode,
 						reason, &ret_folios);

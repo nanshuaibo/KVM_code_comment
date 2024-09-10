@@ -183,7 +183,7 @@ typedef unsigned short freelist_idx_t;
  *
  */
 struct array_cache {
-	unsigned int avail;
+	unsigned int avail; 
 	unsigned int limit;
 	unsigned int batchcount;
 	unsigned int touched;
@@ -381,11 +381,11 @@ static inline void *index_to_obj(struct kmem_cache *cache,
 #define BOOT_CPUCACHE_ENTRIES	1
 /* internal cache of cache description objs */
 static struct kmem_cache kmem_cache_boot = {
-	.batchcount = 1,
-	.limit = BOOT_CPUCACHE_ENTRIES,
-	.shared = 1,
-	.size = sizeof(struct kmem_cache),
-	.name = "kmem_cache",
+	.batchcount = 1,//每次分配的快数为1
+	.limit = BOOT_CPUCACHE_ENTRIES, // 限制每个CPU缓存池中的块数量
+	.shared = 1, // 允许不同CPU核心共享该缓存池
+	.size = sizeof(struct kmem_cache),  // 存储的块大小为kmem_cache结构体的大小
+	.name = "kmem_cache", // 缓存的名称为"kmem_cache"
 };
 
 static DEFINE_PER_CPU(struct delayed_work, slab_reap_work);
@@ -1230,10 +1230,13 @@ void __init kmem_cache_init(void)
 	/*
 	 * struct kmem_cache size depends on nr_node_ids & nr_cpu_ids
 	 */
+    // 完成第一个kmem cache实例kmem_cache的初始化
+    // 第一个kmem cache实例用于为创建其他kmem cache实例分配空间
 	create_boot_cache(kmem_cache, "kmem_cache",
 		offsetof(struct kmem_cache, node) +
 				  nr_node_ids * sizeof(struct kmem_cache_node *),
 				  SLAB_HWCACHE_ALIGN, 0, 0);
+	// kmem cache实例加入slab_caches链表
 	list_add(&kmem_cache->list, &slab_caches);
 	slab_state = PARTIAL;
 
@@ -1245,7 +1248,7 @@ void __init kmem_cache_init(void)
 				kmalloc_info[INDEX_NODE].name[KMALLOC_NORMAL],
 				kmalloc_info[INDEX_NODE].size,
 				ARCH_KMALLOC_FLAGS, 0,
-				kmalloc_info[INDEX_NODE].size);
+				kmalloc_info[INDEX_NODE].size); //使用kmalloc_info中保存的信息来生成不同大小的kmem_cache
 	slab_state = PARTIAL_NODE;
 	setup_kmalloc_cache_index_table();
 
@@ -1263,7 +1266,7 @@ void __init kmem_cache_init(void)
 		}
 	}
 
-	create_kmalloc_caches(ARCH_KMALLOC_FLAGS);
+	create_kmalloc_caches(ARCH_KMALLOC_FLAGS); //create_kmalloc_caches->new_kmalloc_cache创建kmalloc的kmem_cache实例
 }
 
 void __init kmem_cache_init_late(void)
@@ -2860,26 +2863,41 @@ static noinline void *cache_alloc_pfmemalloc(struct kmem_cache *cachep,
  * Slab list should be fixed up by fixup_slab_list() for existing slab
  * or cache_grow_end() for new slab
  */
+/**
+ * 静态内联函数 alloc_block，用于从给定的 slab 中分配对象到 array_cache
+ *
+ * @param cachep: kmem_cache 结构体指针，表示内存缓存池
+ * @param ac: array_cache 结构体指针，表示 array_cache
+ * @param slab: slab 结构体指针，表示要分配对象的 slab
+ * @param batchcount: 要分配的对象数量
+ * @return: 返回剩余未分配的对象数量
+ */
 static __always_inline int alloc_block(struct kmem_cache *cachep,
 		struct array_cache *ac, struct slab *slab, int batchcount)
 {
 	/*
-	 * There must be at least one object available for
-	 * allocation.
+	 * 断言，确保slab上至少有一个对象可供分配。
 	 */
 	BUG_ON(slab->active >= cachep->num);
 
 	while (slab->active < cachep->num && batchcount--) {
+		// 统计信息，增加已分配对象的计数。
 		STATS_INC_ALLOCED(cachep);
+		// 统计信息，增加活动对象的计数。
 		STATS_INC_ACTIVE(cachep);
+		// 设置高水位标记，可能用于记录某个时刻的状态信息。
 		STATS_SET_HIGH(cachep);
 
+		// 从slab中获取一个对象，并将其指针放入ac的entry数组中。
 		ac->entry[ac->avail++] = slab_get_obj(cachep, slab);
 	}
 
+	// 返回batchcount的值，其表示还剩余多少个对象没有被分配。
 	return batchcount;
 }
 
+
+// 用于在缓存(cache)需要补充新对象时进行分配和补充
 static void *cache_alloc_refill(struct kmem_cache *cachep, gfp_t flags)
 {
 	int batchcount;
@@ -2889,81 +2907,103 @@ static void *cache_alloc_refill(struct kmem_cache *cachep, gfp_t flags)
 	void *list = NULL;
 	struct slab *slab;
 
+	// 检查和关闭中断
 	check_irq_off();
+	// 获取当前 CPU 所在的 NUMA 节点
 	node = numa_mem_id();
 
+	// 获取当前 CPU 的缓存数组(ac)
 	ac = cpu_cache_get(cachep);
+	// 设置批量计数(batchcount)，即本次填充操作需要获取的对象数量
 	batchcount = ac->batchcount;
+	// 如果缓存数组(ac)最近没有被访问过，并且批量计数(batchcount)大于批量补充限制(BATCHREFILL_LIMIT)
 	if (!ac->touched && batchcount > BATCHREFILL_LIMIT) {
 		/*
-		 * If there was little recent activity on this cache, then
-		 * perform only a partial refill.  Otherwise we could generate
-		 * refill bouncing.
+		 * 如果这个缓存最近很少被活动，那么
+		 * 执行一个部分重填。否则，我们可能会产生重填反弹。
 		 */
+		// 将批量计数(batchcount)设置为批量补充限制(BATCHREFILL_LIMIT)，以减少重填带来的影响
 		batchcount = BATCHREFILL_LIMIT;
 	}
+	// 通过 NUMA 节点获取一个 kmem_cache_node 结构体指针(n)
 	n = get_node(cachep, node);
 
-	BUG_ON(ac->avail > 0 || !n);
+	// BUG_ON 用于调试，检查当前 CPU 缓存数组(ac)中是否有可用对象，或者是否不存在 kmem_cache_node 结构体指针(n)，如果两者都不满足，则表示出现了错误
+	BUG_ON(ac->avail > 0 ||!n);
+	// 通过读操作获取当前 NUMA 节点的共享数组(shared)
 	shared = READ_ONCE(n->shared);
-	if (!n->free_objects && (!shared || !shared->avail))
+	// 如果当前 NUMA 节点没有空闲对象，并且共享数组(shared)也为空或者没有可用对象，则跳转到 direct_grow 标签处
+	if (!n->free_objects && (!shared ||!shared->avail))
 		goto direct_grow;
 
+	// 加锁，保护共享资源
 	raw_spin_lock(&n->list_lock);
+	// 确保获取到最新的共享数组
 	shared = READ_ONCE(n->shared);
 
-	/* See if we can refill from the shared array */
+	/* 检查能否从共享数组中获取对象 */
 	if (shared && transfer_objects(ac, shared, batchcount)) {
+		// 设置共享数组被访问的标志
 		shared->touched = 1;
+		// 成功获取对象，跳转到 alloc_done 标签处
 		goto alloc_done;
 	}
 
 	while (batchcount > 0) {
-		/* Get slab alloc is to come from. */
+		// 获取第一个可用的 slab,从slabs_free、slabs_partial中获取
 		slab = get_first_slab(n, false);
+		// 如果没有可用的 slab，则表示需要增长缓存，跳转到 must_grow 标签处
 		if (!slab)
 			goto must_grow;
 
+		// 检查 spinlock 是否被获取
 		check_spinlock_acquired(cachep);
 
+		// 从 slab 中分配对象到缓存数组(ac)
 		batchcount = alloc_block(cachep, ac, slab, batchcount);
+		// 修复 slab 链表的状态，可能是更新一些指针或者计数
 		fixup_slab_list(cachep, n, slab, &list);
 	}
 
 must_grow:
+	// 更新节点的空闲对象计数，减掉缓存数组(ac)中已分配出去的对象数量
 	n->free_objects -= ac->avail;
 alloc_done:
+	// 解锁
 	raw_spin_unlock(&n->list_lock);
+	// 可能是调试相关，用于检查和修正对象空闲链表的状态
 	fixup_objfreelist_debug(cachep, &list);
 
 direct_grow:
+	// 如果缓存数组(ac)中没有可用对象了
 	if (unlikely(!ac->avail)) {
-		/* Check if we can use obj in pfmemalloc slab */
+		// 检查是否可以使用 pfmemalloc slab 中的对象
 		if (sk_memalloc_socks()) {
+			// 尝试从 pfmemalloc cachep 中获取对象
 			void *obj = cache_alloc_pfmemalloc(cachep, n, flags);
-
+			// 如果获取成功，直接返回对象指针
 			if (obj)
 				return obj;
 		}
-
+		// 是缓存增长的开始，它会初始化一个新的slab
 		slab = cache_grow_begin(cachep, gfp_exact_node(flags), node);
-
-		/*
-		 * cache_grow_begin() can reenable interrupts,
-		 * then ac could change.
-		 */
+		// 获取当前 CPU 缓存数组，因为在 cache_grow_begin 函数中可能会重新使能中断，导致 ac 可能会发生变化
 		ac = cpu_cache_get(cachep);
+		// 如果缓存数组中没有可用对象，并且有一个新的slab，则从slab中分配对象到缓存数组中
 		if (!ac->avail && slab)
 			alloc_block(cachep, ac, slab, batchcount);
-		cache_grow_end(cachep, slab);
-
-		if (!ac->avail)
-			return NULL;
-	}
-	ac->touched = 1;
-
-	return ac->entry[--ac->avail];
+		// 结束 cache_grow 过程，可能涉及到一些清理和收尾工作
+	cache_grow_end(cachep, slab);
+	// 如果缓存数组(ac)中仍然没有可用对象，则返回 NULL
+	if (!ac->avail)
+	return NULL;
 }
+// 设置当前 CPU 缓存数组(ac)的 touched 标志，表示它最近被访问过
+ac->touched = 1;
+
+// 从缓存数组(ac)中获取一个对象，并返回其指针
+return ac->entry[--ac->avail];
+
 
 #if DEBUG
 static void *cache_alloc_debugcheck_after(struct kmem_cache *cachep,
@@ -3012,22 +3052,22 @@ static inline void *____cache_alloc(struct kmem_cache *cachep, gfp_t flags)
 
 	check_irq_off();
 
-	ac = cpu_cache_get(cachep);
-	if (likely(ac->avail)) {
-		ac->touched = 1;
-		objp = ac->entry[--ac->avail];
+	ac = cpu_cache_get(cachep);// 获取当前CPU的缓存
+	if (likely(ac->avail)) { // 检查CPU缓存中是否有可用的对象
+		ac->touched = 1;// 标记缓存已使用过
+		objp = ac->entry[--ac->avail];// 从缓存中获取一个对象
 
-		STATS_INC_ALLOCHIT(cachep);
-		goto out;
+		STATS_INC_ALLOCHIT(cachep);// 增加分配命中统计次数
+		goto out; //分配成功
 	}
 
-	STATS_INC_ALLOCMISS(cachep);
-	objp = cache_alloc_refill(cachep, flags);
+	STATS_INC_ALLOCMISS(cachep);// 增加分配未命中统计次数
+	objp = cache_alloc_refill(cachep, flags); // 填充CPU缓存
 	/*
 	 * the 'ac' may be updated by cache_alloc_refill(),
 	 * and kmemleak_erase() requires its correct value.
 	 */
-	ac = cpu_cache_get(cachep);
+	ac = cpu_cache_get(cachep); // 再次获取CPU缓存，可能已被重新填充
 
 out:
 	/*
@@ -3187,13 +3227,14 @@ must_grow:
 	return obj ? obj : fallback_alloc(cachep, flags);
 }
 
+// 执行具体的内存分配操作
 static __always_inline void *
 __do_cache_alloc(struct kmem_cache *cachep, gfp_t flags, int nodeid)
 {
 	void *objp = NULL;
 	int slab_node = numa_mem_id();
 
-	if (nodeid == NUMA_NO_NODE) {
+	if (nodeid == NUMA_NO_NODE) { //非numa节点
 		if (current->mempolicy || cpuset_do_slab_mem_spread()) {
 			objp = alternate_node_alloc(cachep, flags);
 			if (objp)
@@ -3253,7 +3294,7 @@ slab_alloc_node(struct kmem_cache *cachep, struct list_lru *lru, gfp_t flags,
 		goto out;
 
 	local_irq_save(save_flags);
-	objp = __do_cache_alloc(cachep, flags, nodeid);
+	objp = __do_cache_alloc(cachep, flags, nodeid);// 执行具体的内存分配操作
 	local_irq_restore(save_flags);
 	objp = cache_alloc_debugcheck_after(cachep, flags, objp, caller);
 	prefetchw(objp);
@@ -3270,7 +3311,7 @@ slab_alloc(struct kmem_cache *cachep, struct list_lru *lru, gfp_t flags,
 	   size_t orig_size, unsigned long caller)
 {
 	return slab_alloc_node(cachep, lru, flags, NUMA_NO_NODE, orig_size,
-			       caller);
+			       caller); //slab_alloc_node->__do_cache_alloc
 }
 
 /*
@@ -3368,41 +3409,41 @@ free_done:
 }
 
 /*
- * Release an obj back to its cache. If the obj has a constructed state, it must
- * be in this state _before_ it is released.  Called with disabled ints.
+ * 将一个 obj 释放回其缓存。如果 obj 处于已构造状态，在释放它之前，它必须处于这种状态。 在禁用中断的情况下调用。
  */
 static __always_inline void __cache_free(struct kmem_cache *cachep, void *objp,
-					 unsigned long caller)
+                                         unsigned long caller)
 {
-	bool init;
+    bool init;
 
-	memcg_slab_free_hook(cachep, virt_to_slab(objp), &objp, 1);
+    memcg_slab_free_hook(cachep, virt_to_slab(objp), &objp, 1);
 
-	if (is_kfence_address(objp)) {
-		kmemleak_free_recursive(objp, cachep->flags);
-		__kfence_free(objp);
-		return;
-	}
+    if (is_kfence_address(objp)) {
+        kmemleak_free_recursive(objp, cachep->flags);
+        __kfence_free(objp);
+        return;
+    }
 
-	/*
-	 * As memory initialization might be integrated into KASAN,
-	 * kasan_slab_free and initialization memset must be
-	 * kept together to avoid discrepancies in behavior.
-	 */
-	init = slab_want_init_on_free(cachep);
-	if (init && !kasan_has_integrated_init())
-		memset(objp, 0, cachep->object_size);
-	/* KASAN might put objp into memory quarantine, delaying its reuse. */
-	if (kasan_slab_free(cachep, objp, init))
-		return;
+    /*
+     * 由于内存初始化可能已集成到 KASAN 中，因此 kasan_slab_free 和初始化 memset 必须
+     * 放在一起，以避免行为上的差异。
+     */
+    init = slab_want_init_on_free(cachep);
+    if (init &&!kasan_has_integrated_init())
+	    // 释放时初始化对象
+        memset(objp, 0, cachep->object_size);
+    /* KASAN 可能会将 objp 放入内存隔离区，延迟其重用。 */
+    if (kasan_slab_free(cachep, objp, init))
+        return;
 
-	/* Use KCSAN to help debug racy use-after-free. */
-	if (!(cachep->flags & SLAB_TYPESAFE_BY_RCU))
-		__kcsan_check_access(objp, cachep->object_size,
-				     KCSAN_ACCESS_WRITE | KCSAN_ACCESS_ASSERT);
+    /* 使用 KCSAN 帮助调试竞争条件下的释放后使用错误。 */
+    if (!(cachep->flags & SLAB_TYPESAFE_BY_RCU))
+        __kcsan_check_access(objp, cachep->object_size,
+                             KCSAN_ACCESS_WRITE | KCSAN_ACCESS_ASSERT);
 
-	___cache_free(cachep, objp, caller);
+    ___cache_free(cachep, objp, caller);
 }
+
 
 void ___cache_free(struct kmem_cache *cachep, void *objp,
 		unsigned long caller)
@@ -3424,10 +3465,10 @@ void ___cache_free(struct kmem_cache *cachep, void *objp,
 		return;
 
 	if (ac->avail < ac->limit) {
-		STATS_INC_FREEHIT(cachep);
+		STATS_INC_FREEHIT(cachep); //本地 CPU 缓存数量未超过 limit 则直接回收到本地 CPU 空闲缓存中
 	} else {
 		STATS_INC_FREEMISS(cachep);
-		cache_flusharray(cachep, ac);
+		cache_flusharray(cachep, ac); //超过则调用cache_flusharray()向全局 CPU 共享空闲缓存中移动
 	}
 
 	if (sk_memalloc_socks()) {
@@ -3438,7 +3479,7 @@ void ___cache_free(struct kmem_cache *cachep, void *objp,
 			return;
 		}
 	}
-
+	//将对象从缓存中移除并释放其占用的内存。
 	__free_one(ac, objp);
 }
 
@@ -3446,7 +3487,8 @@ static __always_inline
 void *__kmem_cache_alloc_lru(struct kmem_cache *cachep, struct list_lru *lru,
 			     gfp_t flags)
 {
-	void *ret = slab_alloc(cachep, lru, flags, cachep->object_size, _RET_IP_);
+	// 调用slab_alloc函数进行内存分配
+	void *ret = slab_alloc(cachep, lru, flags, cachep->object_size, _RET_IP_); //slab_alloc->slab_alloc_node->__do_cache_alloc
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, cachep, flags, NUMA_NO_NODE);
 
@@ -3579,6 +3621,7 @@ void __do_kmem_cache_free(struct kmem_cache *cachep, void *objp,
 	debug_check_no_locks_freed(objp, cachep->object_size);
 	if (!(cachep->flags & SLAB_DEBUG_OBJECTS))
 		debug_check_no_obj_freed(objp, cachep->object_size);
+	//释放内存缓存对象
 	__cache_free(cachep, objp, caller);
 	local_irq_restore(flags);
 }
