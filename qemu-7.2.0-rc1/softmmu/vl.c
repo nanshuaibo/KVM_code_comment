@@ -868,10 +868,10 @@ static void help(int exitcode)
 #define HAS_ARG 0x0001
 
 typedef struct QEMUOption {
-    const char *name;
-    int flags;
+    const char *name; //参数名称
+    int flags; //参数选项的属性
     int index;
-    uint32_t arch_mask;
+    uint32_t arch_mask; //参数支持的体系结构
 } QEMUOption;
 
 static const QEMUOption qemu_options[] = {
