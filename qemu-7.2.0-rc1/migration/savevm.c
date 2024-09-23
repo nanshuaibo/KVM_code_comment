@@ -1352,7 +1352,7 @@ int qemu_savevm_state_complete_precopy_iterable(QEMUFile *f, bool in_postcopy)
 
         save_section_header(f, se, QEMU_VM_SECTION_END);
 
-        ret = se->ops->save_live_complete_precopy(f, se->opaque);
+        ret = se->ops->save_live_complete_precopy(f, se->opaque); //ram_save_complete
         trace_savevm_section_end(se->idstr, se->section_id, ret);
         save_section_footer(f, se);
         if (ret < 0) {
@@ -1447,7 +1447,7 @@ int qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only,
 
     trace_savevm_state_complete_precopy();
 
-    cpu_synchronize_all_states();
+    cpu_synchronize_all_states();//获取寄存器的值保存到CPUState中(调用ioctl)
 
     if (!in_postcopy || iterable_only) {
         ret = qemu_savevm_state_complete_precopy_iterable(f, in_postcopy); //完成最后的数据传输
