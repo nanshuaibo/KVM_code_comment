@@ -1,2 +1,6 @@
 linux-6.2/.vscode/settings.json
 *.log
+*.json
+linux-6.2/GPATH
+linux-6.2/GRTAGS
+linux-6.2/GTAGS
