@@ -5904,41 +5904,38 @@ static void put_prev_task_balance(struct rq *rq, struct task_struct *prev,
 static inline struct task_struct *
 __pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
-	const struct sched_class *class;
+	const struct sched_class *class;//定义调度类指针
 	struct task_struct *p;
 
-	/*
-	 * Optimization: we know that if all tasks are in the fair class we can
-	 * call that function directly, but only if the @prev task wasn't of a
-	 * higher scheduling class, because otherwise those lose the
-	 * opportunity to pull in more work from other CPUs.
-	 */
+    // 优化：如果前一个任务是公平调度类中的任务，且运行队列中的任务数与CFS队列中的任务数相等，
+    // 则可以直接选择下一个公平类任务，因为其他调度类的任务无法抢占CPU。
 	if (likely(!sched_class_above(prev->sched_class, &fair_sched_class) &&
 		   rq->nr_running == rq->cfs.h_nr_running)) {
 
-		p = pick_next_task_fair(rq, prev, rf);
-		if (unlikely(p == RETRY_TASK))
+		p = pick_next_task_fair(rq, prev, rf);// 选择下一个公平调度类任务
+		if (unlikely(p == RETRY_TASK))// 如果选择任务失败，需要重新尝试
 			goto restart;
 
 		/* Assume the next prioritized class is idle_sched_class */
 		if (!p) {
 			put_prev_task(rq, prev);
-			p = pick_next_task_idle(rq);
+			p = pick_next_task_idle(rq);// 如果没有可运行任务，则选择下一个空转调度类任务
 		}
 
 		return p;
 	}
 
 restart:
-	put_prev_task_balance(rq, prev, rf);
+	put_prev_task_balance(rq, prev, rf);// 将前一个任务放回队列，进行重新平衡
 
+	// 遍历所有调度类
 	for_each_class(class) {
-		p = class->pick_next_task(rq);
+		p = class->pick_next_task(rq);// 选择下一个任务
 		if (p)
 			return p;
 	}
 
-	BUG(); /* The idle class should always have a runnable task. */
+	BUG(); // 如果没有可运行任务，引发BUG。空转类应该始终有可运行的任务。
 }
 
 #ifdef CONFIG_SCHED_CORE
@@ -5990,10 +5987,10 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 	struct rq *rq_i;
 	bool need_sync;
 
-	if (!sched_core_enabled(rq))
+	if (!sched_core_enabled(rq))//当前rq的调度功能未启用
 		return __pick_next_task(rq, prev, rf);
 
-	cpu = cpu_of(rq);
+	cpu = cpu_of(rq);//当前rq对应的cpu
 
 	/* Stopper task is switching into idle, no need core-wide selection. */
 	if (cpu_is_offline(cpu)) {
@@ -6449,44 +6446,36 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 #endif
 
 /*
- * __schedule() is the main scheduler function.
+ * __schedule() 是主调度函数。
  *
- * The main means of driving the scheduler and thus entering this function are:
+ * 驱动调度器并因此进入此函数的主要手段有：
  *
- *   1. Explicit blocking: mutex, semaphore, waitqueue, etc.
+ *   1. 显式阻塞：互斥量、信号量、等待队列等。
  *
- *   2. TIF_NEED_RESCHED flag is checked on interrupt and userspace return
- *      paths. For example, see arch/x86/entry_64.S.
+ *   2. 在中断和用户空间返回路径上检查 TIF_NEED_RESCHED 标志。例如，见 arch/x86/entry_64.S。
  *
- *      To drive preemption between tasks, the scheduler sets the flag in timer
- *      interrupt handler scheduler_tick().
+ *      为了在任务之间驱动抢占，调度器在 timer 中断处理程序 scheduler_tick() 中设置这个标志。
  *
- *   3. Wakeups don't really cause entry into schedule(). They add a
- *      task to the run-queue and that's it.
+ *   3. 唤醒并不真正导致进入调度。它们只是将一个任务添加到运行队列中。
  *
- *      Now, if the new task added to the run-queue preempts the current
- *      task, then the wakeup sets TIF_NEED_RESCHED and schedule() gets
- *      called on the nearest possible occasion:
+ *      现在，如果添加到运行队列中的新任务抢占了当前任务，那么唤醒会设置 TIF_NEED_RESCHED，并且调度器会在最近的可能时机被调用：
  *
- *       - If the kernel is preemptible (CONFIG_PREEMPTION=y):
+ *       - 如果内核是可抢占的（CONFIG_PREEMPTION=y）：
  *
- *         - in syscall or exception context, at the next outmost
- *           preempt_enable(). (this might be as soon as the wake_up()'s
- *           spin_unlock()!)
+ *         - 在系统调用或异常上下文中，在下次最外层 preempt_enable() 时。（这可能是 wake_up() 的 spin_unlock() 之后！）
  *
- *         - in IRQ context, return from interrupt-handler to
- *           preemptible context
+ *         - 在 IRQ 上下文中，从中断处理程序返回到可抢占上下文
  *
- *       - If the kernel is not preemptible (CONFIG_PREEMPTION is not set)
- *         then at the next:
+ *       - 如果内核不可抢占（没有设置 CONFIG_PREEMPTION），那么在下一个：
  *
- *          - cond_resched() call
- *          - explicit schedule() call
- *          - return from syscall or exception to user-space
- *          - return from interrupt-handler to user-space
+ *          - cond_resched() 调用
+ *          - 显式的 schedule() 调用
+ *          - 从系统调用或异常返回到用户空间
+ *          - 从中断处理程序返回到用户空间
  *
- * WARNING: must be called with preemption disabled!
+ * 警告：必须在禁用抢占的情况下调用！
  */
+
 static void __sched notrace __schedule(unsigned int sched_mode)
 {
 	struct task_struct *prev, *next;
@@ -6498,7 +6487,7 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 
 	cpu = smp_processor_id();
 	rq = cpu_rq(cpu);
-	prev = rq->curr;
+	prev = rq->curr; //获取当前任务
 
 	schedule_debug(prev, !!sched_mode);
 
@@ -6528,26 +6517,27 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 
 	/* Promote REQ to ACT */
 	rq->clock_update_flags <<= 1;
-	update_rq_clock(rq);
+	update_rq_clock(rq); //更新运行队列的时钟
 
-	switch_count = &prev->nivcsw;
+	switch_count = &prev->nivcsw; //非自愿上下文切换次数
 
 	/*
 	 * We must load prev->state once (task_struct::state is volatile), such
 	 * that we form a control dependency vs deactivate_task() below.
 	 */
-	prev_state = READ_ONCE(prev->__state);
-	if (!(sched_mode & SM_MASK_PREEMPT) && prev_state) {
+	prev_state = READ_ONCE(prev->__state); //获取当前任务的运行状态
+	if (!(sched_mode & SM_MASK_PREEMPT) && prev_state) {//非抢占模式，且当前任务的为不可运行状态
 		if (signal_pending_state(prev_state, prev)) {
 			WRITE_ONCE(prev->__state, TASK_RUNNING);
 		} else {
 			prev->sched_contributes_to_load =
 				(prev_state & TASK_UNINTERRUPTIBLE) &&
 				!(prev_state & TASK_NOLOAD) &&
-				!(prev_state & TASK_FROZEN);
+				!(prev_state & TASK_FROZEN);//如果任务处于TASK_UNINTERRUPTIBLE状态，
+				//并且没有设置TASK_NOLOAD或TASK_FROZEN标志，那么它被认为是在执行一些工作，因此对负载有贡献。
 
 			if (prev->sched_contributes_to_load)
-				rq->nr_uninterruptible++;
+				rq->nr_uninterruptible++;//不可中断任务计数
 
 			/*
 			 * __schedule()			ttwu()
@@ -6567,10 +6557,10 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 				delayacct_blkio_start();
 			}
 		}
-		switch_count = &prev->nvcsw;
+		switch_count = &prev->nvcsw;//自愿上下文切换次数
 	}
 
-	next = pick_next_task(rq, prev, &rf);
+	next = pick_next_task(rq, prev, &rf);//获取下一个要切换的进程
 	clear_tsk_need_resched(prev);
 	clear_preempt_need_resched();
 #ifdef CONFIG_SCHED_DEBUG
@@ -6578,7 +6568,7 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 #endif
 
 	if (likely(prev != next)) {
-		rq->nr_switches++;
+		rq->nr_switches++;//切换成功
 		/*
 		 * RCU users of rcu_dereference(rq->curr) may not see
 		 * changes to task_struct made by pick_next_task().
@@ -6598,7 +6588,7 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 		 * - switch_to() for arm64 (weakly-ordered, spin_unlock
 		 *   is a RELEASE barrier),
 		 */
-		++*switch_count;
+		++*switch_count;//切换次数
 
 		migrate_disable_switch(rq, prev);
 		psi_sched_switch(prev, next, !task_on_rq_queued(prev));
@@ -6606,7 +6596,7 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 		trace_sched_switch(sched_mode & SM_MASK_PREEMPT, prev, next, prev_state);
 
 		/* Also unlocks the rq: */
-		rq = context_switch(rq, prev, next, &rf);
+		rq = context_switch(rq, prev, next, &rf);//进行进程切换，将CPU控制权移交给下一个进程
 	} else {
 		rq->clock_update_flags &= ~(RQCF_ACT_SKIP|RQCF_REQ_SKIP);
 
@@ -6677,15 +6667,21 @@ static void sched_update_worker(struct task_struct *tsk)
 
 asmlinkage __visible void __sched schedule(void)
 {
+	// 获取当前任务结构体的指针
 	struct task_struct *tsk = current;
 
+	//将任务提交到调度工作队列中
 	sched_submit_work(tsk);
+	// 进入调度循环，直到没有需要被调度的任务
 	do {
-		preempt_disable();
-		__schedule(SM_NONE);
-		sched_preempt_enable_no_resched();
-	} while (need_resched());
-	sched_update_worker(tsk);
+        // 禁用抢占
+        preempt_disable();
+        // 调用实际的调度函数 __schedule，并传入调度策略参数 SM_NONE
+        __schedule(SM_NONE);
+        // 启用抢占，但不进行重新调度
+        sched_preempt_enable_no_resched();
+	} while (need_resched()); // 循环直到没有需要重新调度的任务
+	sched_update_worker(tsk); // 更新工作队列中的任务状态
 }
 EXPORT_SYMBOL(schedule);
 

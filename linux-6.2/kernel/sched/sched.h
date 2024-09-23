@@ -987,9 +987,9 @@ struct rq {
 #define UCLAMP_FLAG_IDLE 0x01
 #endif
 
-	struct cfs_rq		cfs;
-	struct rt_rq		rt;
-	struct dl_rq		dl;
+	struct cfs_rq		cfs; //cfs调度队列
+	struct rt_rq		rt; //实时调度队列
+	struct dl_rq		dl; //截止时间调度队列
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* list of leaf cfs_rq on this CPU: */

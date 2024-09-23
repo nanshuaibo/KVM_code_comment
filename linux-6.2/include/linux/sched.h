@@ -544,41 +544,44 @@ struct sched_statistics {
 #endif /* CONFIG_SCHEDSTATS */
 } ____cacheline_aligned;
 
+// 定义调度实体结构体
 struct sched_entity {
-	/* For load-balancing: */
-	struct load_weight		load;
-	struct rb_node			run_node;
-	struct list_head		group_node;
-	unsigned int			on_rq;
+	/* 负载均衡相关 */
+	struct load_weight		load;		// 负载权重信息
+	struct rb_node			run_node;	// 红黑树节点，用于调度器中的排序
+	struct list_head		group_node;	// 链表节点，用于连接到组调度结构体
 
-	u64				exec_start;
-	u64				sum_exec_runtime;
-	u64				vruntime;
-	u64				prev_sum_exec_runtime;
+	unsigned int		on_rq;		// 标记调度实体是否在运行队列中
 
-	u64				nr_migrations;
+	u64				exec_start;	// 最近一次执行开始的时间戳
+	u64				sum_exec_runtime; // 总执行运行时间（用于负载均衡）
+	u64				vruntime;	// 虚拟运行时间（用于 CFS 调度）
+	u64				prev_sum_exec_runtime; // 前一个总执行运行时间
+
+	u64				nr_migrations;	// 迁移次数（记录任务在不同 CPU 之间迁移的次数）
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
-	int				depth;
-	struct sched_entity		*parent;
-	/* rq on which this entity is (to be) queued: */
-	struct cfs_rq			*cfs_rq;
-	/* rq "owned" by this entity/group: */
-	struct cfs_rq			*my_q;
-	/* cached value of my_q->h_nr_running */
-	unsigned long			runnable_weight;
+	int				depth;		// 组层级深度（用于组调度）
+	struct sched_entity		*parent;	// 父调度实体指针（用于组调度）
+
+	/* 以下是用于组调度的成员 */
+	struct cfs_rq			*cfs_rq;	// 该实体所属的完全公平调度器队列
+	struct cfs_rq			*my_q;	// 该实体拥有的队列（如果它是一个组的话）
+
+	unsigned long			runnable_weight; // 可运行状态权重（用于组调度）
 #endif
 
 #ifdef CONFIG_SMP
 	/*
-	 * Per entity load average tracking.
+	 * 每个实体的负载平均值跟踪。
 	 *
-	 * Put into separate cache line so it does not
-	 * collide with read-mostly values above.
+	 * 放在单独的缓存行中，这样它就不会
+	 * 与上面的只读值冲突。
 	 */
-	struct sched_avg		avg;
+	struct sched_avg		avg;	// 调度平均值结构体
 #endif
 };
+
 
 struct sched_rt_entity {
 	struct list_head		run_list;

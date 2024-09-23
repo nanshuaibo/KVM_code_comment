@@ -604,33 +604,48 @@ static inline bool entity_before(struct sched_entity *a,
 #define __node_2_se(node) \
 	rb_entry((node), struct sched_entity, run_node)
 
+// 更新 CFS 调度队列的最小虚拟运行时间
 static void update_min_vruntime(struct cfs_rq *cfs_rq)
 {
-	struct sched_entity *curr = cfs_rq->curr;
-	struct rb_node *leftmost = rb_first_cached(&cfs_rq->tasks_timeline);
-
-	u64 vruntime = cfs_rq->min_vruntime;
-
-	if (curr) {
-		if (curr->on_rq)
-			vruntime = curr->vruntime;
-		else
-			curr = NULL;
-	}
-
-	if (leftmost) { /* non-empty tree */
-		struct sched_entity *se = __node_2_se(leftmost);
-
-		if (!curr)
-			vruntime = se->vruntime;
-		else
-			vruntime = min_vruntime(vruntime, se->vruntime);
-	}
-
-	/* ensure we never gain time by being placed backwards. */
-	u64_u32_store(cfs_rq->min_vruntime,
-		      max_vruntime(cfs_rq->min_vruntime, vruntime));
+    // 获取当前正在执行的任务的调度实体，如果没有当前任务，将 curr 设置为 NULL
+    struct sched_entity *curr = cfs_rq->curr;
+    
+    // 获取 CFS 调度队列中虚拟时间最小的任务，如果队列为空，则 leftmost 为 NULL
+    struct rb_node *leftmost = rb_first_cached(&cfs_rq->tasks_timeline);
+    
+    // 初始化最小虚拟运行时间为当前 CFS 调度队列的 min_vruntime 值
+    u64 vruntime = cfs_rq->min_vruntime;
+    
+    // 如果当前任务存在
+    if (curr) {
+        // 如果当前任务在运行队列中，更新最小虚拟运行时间为当前任务的虚拟运行时间
+        if (curr->on_rq)
+            vruntime = curr->vruntime;
+        
+        // 任务不在队列中
+        else
+            curr = NULL;
+    }
+    
+    // 如果 CFS 调度队列不为空
+    if (leftmost) {
+        // 获取最左边任务的调度实体
+        struct sched_entity *se = __node_2_se(leftmost);
+        
+        // 当前没有调度实体在运行队列中
+        if (!curr)
+            // 更新最小虚拟运行时间为最左边任务的虚拟运行时间
+            vruntime = se->vruntime;
+        else
+            // 当前有调度实体，比较当前任务与最左边任务的虚拟运行时间，更新为较小值
+            vruntime = min_vruntime(vruntime, se->vruntime);
+    }
+    
+    // 更新 CFS 调度队列的 min_vruntime 字段，确保它不会减少
+    u64_u32_store(cfs_rq->min_vruntime,
+                  max_vruntime(cfs_rq->min_vruntime, vruntime));
 }
+
 
 static inline bool __entity_less(struct rb_node *a, const struct rb_node *b)
 {
@@ -892,47 +907,65 @@ static void update_tg_load_avg(struct cfs_rq *cfs_rq)
 #endif /* CONFIG_SMP */
 
 /*
- * Update the current task's runtime statistics.
+ * 更新当前任务的运行时统计信息。
  */
 static void update_curr(struct cfs_rq *cfs_rq)
 {
+	// 获取当前正在执行的任务的调度实体
 	struct sched_entity *curr = cfs_rq->curr;
+	// 获取当前时间
 	u64 now = rq_clock_task(rq_of(cfs_rq));
+	// 计算自上次更新以来的执行时间差
 	u64 delta_exec;
 
+	// 如果当前没有任务则直接返回
 	if (unlikely(!curr))
 		return;
 
+	// 计算当前时间与上次执行开始时间之间的时间差
 	delta_exec = now - curr->exec_start;
+	// 时间差需要为正数才有意义才能进入if进行更新
 	if (unlikely((s64)delta_exec <= 0))
 		return;
 
+	// 更新当前执行任务的执行开始时间
 	curr->exec_start = now;
 
+	// 如果启用了调度统计，则更新执行时间的最大统计值
 	if (schedstat_enabled()) {
 		struct sched_statistics *stats;
-
+		// 通过调度实体获取统计信息结构体指针
 		stats = __schedstats_from_se(curr);
+		// 将执行时间的最大统计值更新为当前差值和原最大统计值中的最大值
 		__schedstat_set(stats->exec_max,
 				max(delta_exec, stats->exec_max));
 	}
 
+	// 增加当前调度实体的总执行运行时间，也就是更新任务的总共运行的时间
 	curr->sum_exec_runtime += delta_exec;
+	// 更新调度队列的执行时钟统计信息，通过调度队列的执行时钟增加差值来更新统计信息
 	schedstat_add(cfs_rq->exec_clock, delta_exec);
 
+	// 通过差值和当前调度实体计算公平调度下的虚拟时间，并更新当前调度实体的虚拟时间。
 	curr->vruntime += calc_delta_fair(delta_exec, curr);
+	// 更新此调度实体所属的 CFS 运行队列的最小虚拟运行时间。
 	update_min_vruntime(cfs_rq);
 
+	// 如果调度实体代表一个进程
 	if (entity_is_task(curr)) {
 		struct task_struct *curtask = task_of(curr);
-
+		// 跟踪调度统计信息，记录当前进程的执行时间、虚拟运行时间等。
 		trace_sched_stat_runtime(curtask, delta_exec, curr->vruntime);
+		// 将 CPU 时间计入当前进程的 cgroup 统计信息。
 		cgroup_account_cputime(curtask, delta_exec);
+		// 将执行时间计入当前进程所属的 cgroup 和子 cgroup 的统计信息。
 		account_group_exec_runtime(curtask, delta_exec);
 	}
 
+	// 将执行时间计入当前调度队列的运行时统计信息。
 	account_cfs_rq_runtime(cfs_rq, delta_exec);
 }
+
 
 static void update_curr_fair(struct rq *rq)
 {
@@ -4968,26 +5001,26 @@ static int
 wakeup_preempt_entity(struct sched_entity *curr, struct sched_entity *se);
 
 /*
- * Pick the next process, keeping these things in mind, in this order:
- * 1) keep things fair between processes/task groups
- * 2) pick the "next" process, since someone really wants that to run
- * 3) pick the "last" process, for cache locality
- * 4) do not run the "skip" process, if something else is available
+ * 选择下一个调度实体，考虑以下因素，按照顺序：
+ * 1) 在进程/任务组之间保持公平性
+ * 2) 选择“下一个”进程，因为某个进程确实希望运行
+ * 3) 选择“上一个”进程，以提高缓存局部性
+ * 4) 如果其他任务可用，则不运行“跳过”的进程
  */
 static struct sched_entity *
 pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 {
-	struct sched_entity *left = __pick_first_entity(cfs_rq);
+	struct sched_entity *left = __pick_first_entity(cfs_rq); // 获取最左边的实体（虚拟时间最小）
 	struct sched_entity *se;
 
 	/*
-	 * If curr is set we have to see if its left of the leftmost entity
-	 * still in the tree, provided there was anything in the tree at all.
-	 */
+	* 如果 curr 被设置，我们必须查看它是否位于树中最左边的实体的左侧，
+	* 前提是树中确实有实体存在。
+	*/
 	if (!left || (curr && entity_before(curr, left)))
 		left = curr;
 
-	se = left; /* ideally we run the leftmost entity */
+	se = left; /* 理想情况下，我们运行最左边的实体 */
 
 	/*
 	 * Avoid running the skip buddy, if running something else can
@@ -4997,9 +5030,9 @@ pick_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 		struct sched_entity *second;
 
 		if (se == curr) {
-			second = __pick_first_entity(cfs_rq);
+			second = __pick_first_entity(cfs_rq);//获取最左边的实体
 		} else {
-			second = __pick_next_entity(se);
+			second = __pick_next_entity(se);// 获取下一个实体
 			if (!second || (curr && entity_before(curr, second)))
 				second = curr;
 		}
@@ -7699,16 +7732,17 @@ again:
 struct task_struct *
 pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
-	struct cfs_rq *cfs_rq = &rq->cfs;
-	struct sched_entity *se;
+	struct cfs_rq *cfs_rq = &rq->cfs;//cfs调度队列
+	struct sched_entity *se;// 定义调度实体指针
 	struct task_struct *p;
 	int new_tasks;
 
 again:
-	if (!sched_fair_runnable(rq))
+	if (!sched_fair_runnable(rq)) // 如果没有可运行的公平调度任务，跳转到idle标签
 		goto idle;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
+ 	// 如果没有前一个任务，或者前一个任务不属于公平调度类，跳转到simple标签
 	if (!prev || prev->sched_class != &fair_sched_class)
 		goto simple;
 
@@ -7729,8 +7763,9 @@ again:
 		 * entity, update_curr() will update its vruntime, otherwise
 		 * forget we've ever seen it.
 		 */
+		// 如果当前任务存在
 		if (curr) {
-			if (curr->on_rq)
+			if (curr->on_rq) // 如果当前任务在队列上，则更新其运行时间
 				update_curr(cfs_rq);
 			else
 				curr = NULL;
@@ -7741,27 +7776,28 @@ again:
 			 * Therefore the nr_running test will indeed
 			 * be correct.
 			 */
+			// 如果CFS队列的运行时间不正常，跳转到idle标签
 			if (unlikely(check_cfs_rq_runtime(cfs_rq))) {
 				cfs_rq = &rq->cfs;
 
-				if (!cfs_rq->nr_running)
+				if (!cfs_rq->nr_running) // 如果没有可运行任务，跳转到idle标签
 					goto idle;
 
 				goto simple;
 			}
 		}
 
-		se = pick_next_entity(cfs_rq, curr);
+		se = pick_next_entity(cfs_rq, curr); // 选择下一个调度实体，并切换到相应的CFS队列
 		cfs_rq = group_cfs_rq(se);
 	} while (cfs_rq);
 
-	p = task_of(se);
-
+	p = task_of(se); // 获取与选定实体关联的任务结构体,展开为container_of宏
 	/*
 	 * Since we haven't yet done put_prev_entity and if the selected task
 	 * is a different task than we started out with, try and touch the
 	 * least amount of cfs_rqs.
 	 */
+	// 如果前一个任务不等于选定任务，进行任务切换（成功选取到了下一个要切换的进程）
 	if (prev != p) {
 		struct sched_entity *pse = &prev->se;
 
@@ -7790,12 +7826,13 @@ simple:
 		put_prev_task(rq, prev);
 
 	do {
+		// 选择下一个调度实体，并切换到相应的CFS队列
 		se = pick_next_entity(cfs_rq, NULL);
 		set_next_entity(cfs_rq, se);
 		cfs_rq = group_cfs_rq(se);
 	} while (cfs_rq);
 
-	p = task_of(se);
+	p = task_of(se);// 获取与选定实体关联的任务结构体
 
 done: __maybe_unused;
 #ifdef CONFIG_SMP
@@ -7804,6 +7841,7 @@ done: __maybe_unused;
 	 * the list, so our cfs_tasks list becomes MRU
 	 * one.
 	 */
+	// 将下一个正在运行的任务移动到队列的前面
 	list_move(&p->se.group_node, &rq->cfs_tasks);
 #endif
 
@@ -7817,7 +7855,7 @@ done: __maybe_unused;
 idle:
 	if (!rf)
 		return NULL;
-
+	// 尝试进行新的空闲平衡操作
 	new_tasks = newidle_balance(rq, rf);
 
 	/*
